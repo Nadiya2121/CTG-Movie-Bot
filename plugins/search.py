@@ -16,8 +16,7 @@ async def search_handler(client: Client, message: Message):
     
     if not results:
         await search_msg.edit_text(
-            f"❌ দুঃখিত, **'{query}'** নামের কোনো মুভি বা ফাইল আমাদের ডাটাবেজে পাওয়া যায়নি।\n\n"
-            f"💡 *টিপস:* বানানটি পুনরায় চেক করুন অথবা শুধুমাত্র মুভির মূল নামটি লিখে সার্চ করুন।"
+            f"❌ দুঃখিত, **'{query}'** নামের কোনো মুভি আমাদের ডাটাবেজে পাওয়া যায়নি।"
         )
         return
 
@@ -26,17 +25,15 @@ async def search_handler(client: Client, message: Message):
         file_name = file["file_name"]
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
-        
-        # বাটন ফরম্যাট
         buttons.append([InlineKeyboardButton(f"🎬 {file_name} [{file_size} MB]", callback_data=f"file_{db_id}")])
 
     await search_msg.delete()
     await message.reply_text(
-        f"🍿 **'{query}'** এর জন্য প্রাপ্ত ফলাফলসমূহ:\n*(নিচের বাটনে ক্লিক করে ফাইলটি ডাউনলোড করুন)*",
+        f"🍿 **'{query}'** এর ফলাফল নিচে দেওয়া হলো:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# বাটন ক্লিক হ্যান্ডলার (এখানেই এররটি ফিক্স করা হয়েছে)
+# বাটন ক্লিক করলে ক্যাপশন সহ ফাইল যাবে
 @Client.on_callback_query(filters.regex(r"^file_"))
 async def send_file(client: Client, callback_query):
     file_db_id = callback_query.data.split("_")[1]
@@ -44,13 +41,23 @@ async def send_file(client: Client, callback_query):
     
     if file_data:
         try:
-            # send_cached_media ব্যবহারের ফলে ভিডিও বা ডকুমেন্ট যেকোনো ফাইল স্বয়ংক্রিয়ভাবে চলে যাবে
+            file_name = file_data["file_name"]
+            file_size = round(file_data["file_size"] / (1024 * 1024), 2)
+            
+            # ফাইলের সাথে সুন্দর ক্যাপশন যুক্ত করা হলো
+            caption_text = (
+                f"🎬 **ফাইলের নাম:** `{file_name}`\n"
+                f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
+                f"⚡️ *CTG Movie Bot-এর মাধ্যমে ডাউনলোড করার জন্য ধন্যবাদ!*"
+            )
+            
             await client.send_cached_media(
                 chat_id=callback_query.message.chat.id,
-                file_id=file_data["file_id"]
+                file_id=file_data["file_id"],
+                caption=caption_text
             )
             await callback_query.answer()
         except Exception as e:
-            await callback_query.answer(f"ফাইল পাঠাতে ব্যর্থ হয়েছে: {str(e)}", show_alert=True)
+            await callback_query.answer(f"সমস্যা: {str(e)}", show_alert=True)
     else:
-        await callback_query.answer("দুঃখিত, ফাইলটি আমাদের সার্ভারে খুঁজে পাওয়া যায়নি!", show_alert=True)
+        await callback_query.answer("ফাইলটি ডাটাবেজে পাওয়া যায়নি!", show_alert=True)
