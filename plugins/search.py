@@ -1,18 +1,48 @@
 # plugins/search.py
 
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
-from database import search_db, get_file_by_db_id
+from database import search_db, get_file_by_db_id, add_user
 
 # প্রতি পৃষ্ঠায় কয়টি করে মুভি বাটন দেখাবে
 FILES_PER_PAGE = 5
 
 @Client.on_message(filters.text & filters.private)
-async def search_handler(client: Client, message: Message):
-    if message.text.startswith("/"):
+async def main_handler(client: Client, message: Message):
+    text = message.text.strip()
+
+    # --- ১. যদি মেসেজটি '/start' হয় (সার্চ ফিল্টারের ভেতর কমান্ড হ্যান্ডলিং) ---
+    if text.startswith("/start"):
+        # ব্যাকগ্রাউন্ডে ইউজার সেভ করা
+        try:
+            await add_user(
+                user_id=message.from_user.id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name
+            )
+        except Exception as e:
+            print(f"User save error: {e}")
+
+        # স্বাগত বার্তা পাঠানো
+        welcome_text = (
+            f"👋 **হ্যালো {message.from_user.first_name or 'ইউজার'}!**\n\n"
+            f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
+            f"এখানে আপনি আপনার পছন্দের যেকোনো মুভি ও ওয়েব সিরিজ পেয়ে যাবেন খুবই দ্রুত।\n\n"
+            f"📢 **কিভাবে মুভি খুঁজবেন?**\n"
+            f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।\n"
+            f"💡 *যেমন:* `RRR` অথবা `KGF` লিখে পাঠান।\n\n"
+            f"⚠️ *সহজ অনুসন্ধানের জন্য মুভির সঠিক বানানটি লেখার অনুরোধ রইল।*"
+        )
+        await message.reply_text(welcome_text)
         return
 
-    query = message.text
+    # --- ২. যদি অন্য কোনো এডমিন কমান্ড হয় (যা / দিয়ে শুরু) ---
+    if text.startswith("/"):
+        return # এডমিন কমান্ডগুলো plugins/admin.py হ্যান্ডেল করবে
+
+    # --- ৩. সাধারণ মেসেজ হলে মুভি সার্চ করা ---
+    query = text
     search_msg = await message.reply_text("🔍 খোঁজা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
     
     results = await search_db(query)
@@ -26,13 +56,13 @@ async def search_handler(client: Client, message: Message):
     # প্রথম পেজ (Page 0) জেনারেট করা
     await send_search_results(message, results, query, page=0)
 
-# সার্চ রেজাল্ট পেজ আকারে সাজানোর কমন ফাংশন
+
+# সার্চ রেজাল্ট পেজ আকারে সাজানোর ফাংশন
 async def send_search_results(message_or_query, results, query, page=0):
     total_results = len(results)
     start_index = page * FILES_PER_PAGE
     end_index = start_index + FILES_PER_PAGE
     
-    # বর্তমান পেজের জন্য ফাইলগুলো ফিল্টার করা
     current_page_results = results[start_index:end_index]
     
     buttons = []
@@ -42,12 +72,11 @@ async def send_search_results(message_or_query, results, query, page=0):
         db_id = str(file["_id"])
         buttons.append([InlineKeyboardButton(f"🎬 {file_name} [{file_size} MB]", callback_data=f"file_{db_id}")])
 
-    # নেভিগেশন বাটন (Previous / Next) তৈরি করা
+    # নেভিগেশন বাটন (Previous / Next) তৈরি
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("◀️ আগের", callback_data=f"page|{page - 1}|{query}"))
     
-    # বর্তমান পেজ নম্বর প্রদর্শন করা
     total_pages = (total_results + FILES_PER_PAGE - 1) // FILES_PER_PAGE
     nav_buttons.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="pages_info"))
     
@@ -60,12 +89,11 @@ async def send_search_results(message_or_query, results, query, page=0):
     reply_markup = InlineKeyboardMarkup(buttons)
     text = f"🍿 **'{query}'** এর জন্য প্রাপ্ত ফলাফলসমূহ:"
     
-    # যদি মেসেজটি কোনো নতুন সার্চ হয়
     if isinstance(message_or_query, Message):
         await message_or_query.reply_text(text, reply_markup=reply_markup)
-    # যদি পেজ পরিবর্তনের ক্লিক হয় (এডিট মেসেজ করা হবে)
     else:
         await message_or_query.message.edit_text(text, reply_markup=reply_markup)
+
 
 # পেজ পরিবর্তনের বাটন ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^page\|"))
@@ -74,17 +102,16 @@ async def page_click_handler(client: Client, callback_query):
     target_page = int(data[1])
     query = data[2]
     
-    # ডাটাবেজ থেকে আবার সার্চ করে সঠিক পৃষ্ঠার ডাটা আনা
     results = await search_db(query)
-    
     if results:
         await send_search_results(callback_query, results, query, page=target_page)
     await callback_query.answer()
 
-# পেজ ইনফো বাটনে ক্লিক করলে নোটিফিকেশন দেবে
+
 @Client.on_callback_query(filters.regex(r"^pages_info$"))
 async def pages_info_click(client: Client, callback_query):
     await callback_query.answer("এটি বর্তমান পেজ নম্বর নির্দেশ করছে।", show_alert=False)
+
 
 # ফাইল ডেলিভারি বাটন ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^file_"))
