@@ -5,24 +5,13 @@ import re
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from pyrogram.enums import ChatType
-from pyrogram.errors import UserNotParticipant, MessageNotModified  # MessageNotModified ইম্পোর্ট করা হয়েছে
+from pyrogram.errors import UserNotParticipant, MessageNotModified
 from database import search_db, get_file_by_db_id, add_user
 import config
 
 FILES_PER_PAGE = 5
 
-# --- নয়েজ ওয়ার্ড রিমুভার (ইউজার অতিরিক্ত শব্দ যেমন movie, full, hd লিখলে তা রিমুভ করবে) ---
-def clean_search_query(query: str) -> str:
-    cleaned = query.lower().replace(".", " ").replace("-", " ")
-    noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
-    words = cleaned.split()
-    if len(words) > 1:
-        cleaned_words = [w for w in words if w not in noise_words]
-        if cleaned_words:
-            return " ".join(cleaned_words)
-    return query
-
-# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (মুভির নাম ঠিক রেখে শুধুমাত্র লিংক ডিলিট করবে) ---
+# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (মুভির নাম ঠিক রেখে প্রমোশন লিংক ডিলিট করবে) ---
 def clean_movie_title(name: str) -> str:
     name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
     name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
@@ -54,30 +43,34 @@ async def auto_delete_group_reply(message: Message):
 @Client.on_message(filters.text)
 async def main_handler(client: Client, message: Message):
     text = message.text.strip()
+    user_id = message.from_user.id
 
     # ==========================================
     # --- ক. পার্সোনাল চ্যাট হ্যান্ডলার (Private PM) ---
     # ==========================================
     if message.chat.type == ChatType.PRIVATE:
         if text.startswith("/start"):
-            # ফোর্স সাবস্ক্রিপশন চেক
-            try:
-                await client.get_chat_member(config.MAIN_CHANNEL_ID, message.from_user.id)
-            except UserNotParticipant:
-                fsub_buttons = [
-                    [InlineKeyboardButton("🍿 Join Our Movie Channel", url=config.CHANNEL_LINK_1)],
-                    [InlineKeyboardButton("🔄 Try Again", url=f"https://t.me/{config.BOT_USERNAME}?start={text[7:]}" if len(text.split()) > 1 else f"https://t.me/{config.BOT_USERNAME}?start=start")]
-                ]
-                await message.reply_text(
-                    f"👋 **হ্যালো {message.from_user.first_name}!**\n\n"
-                    f"বট থেকে ফাইল পেতে হলে আপনাকে প্রথমে আমাদের মুভি চ্যানেলে জয়েন হতে হবে।\n\n"
-                    f"👉 অনুগ্রহ করে নিচের বাটনে জয়েন করে 'Try Again' এ ক্লিক করুন।",
-                    reply_markup=InlineKeyboardMarkup(fsub_buttons)
-                )
-                return
-            except Exception as e:
-                # স্মার্ট সেফটি ফিচার: বট যদি চ্যানেলে এডমিন না থাকে, তবে ক্র্যাশ না করে সরাসরি ফাইল ডাউনলোড করতে দেবে
-                print(f"FSub Warning (Make sure bot is Admin in main channel): {e}")
+            
+            # --- ১. ফোর্স সাবস্ক্রিপশন চেক (এডমিন ছাড়া বাকি সবার জন্য বাধ্যতামূলক) ---
+            if user_id != config.ADMIN_ID:
+                try:
+                    await client.get_chat_member(config.MAIN_CHANNEL_ID, user_id)
+                except UserNotParticipant:
+                    # জয়েন না থাকলে ব্লক করা হবে
+                    fsub_buttons = [
+                        [InlineKeyboardButton("🍿 Join Our Movie Channel", url=config.CHANNEL_LINK_1)],
+                        [InlineKeyboardButton("🔄 Try Again", url=f"https://t.me/{config.BOT_USERNAME}?start={text[7:]}" if len(text.split()) > 1 else f"https://t.me/{config.BOT_USERNAME}?start=start")]
+                    ]
+                    await message.reply_text(
+                        f"👋 **হ্যালো {message.from_user.first_name}!**\n\n"
+                        f"বট থেকে ফাইল পেতে হলে আপনাকে প্রথমে আমাদের মুভি চ্যানেলে জয়েন হতে হবে।\n\n"
+                        f"👉 অনুগ্রহ করে নিচের বাটনে জয়েন করে 'Try Again' এ ক্লিক করুন।",
+                        reply_markup=InlineKeyboardMarkup(fsub_buttons)
+                    )
+                    return
+                except Exception as e:
+                    # সেফটি ফিল্টার: এডমিন মেকানিজমে ভুল থাকলে যাতে সাধারণ ইউজাররা অন্তত ব্লক না হয়
+                    print(f"FSub Warning (Make sure bot is Admin in main channel): {e}")
 
             # --- ২. সিকিউরিটি চেক এবং ফাইল ডেলিভারি ---
             if len(text.split()) > 1:
@@ -100,7 +93,7 @@ async def main_handler(client: Client, message: Message):
                                 f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
                                 f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
                                 f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কпиরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                             )
                             
                             promo_buttons = [
@@ -154,7 +147,7 @@ async def main_handler(client: Client, message: Message):
 
             welcome_text = (
                 f"👋 **হ্যালো {message.from_user.first_name or 'ইউজার'}!**\n\n"
-                f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
+                f"🎬 **🎬 CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
                 f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।"
             )
             await message.reply_text(welcome_text)
