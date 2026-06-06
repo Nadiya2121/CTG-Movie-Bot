@@ -1,176 +1,181 @@
-# bot.py
+# plugins/search.py
 
 import asyncio
-import os
-import threading
-from http.server import SimpleHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
-import random
-
-# ১. পাইথনের নতুন ভার্সনে Pyrogram এর ইভেন্ট লুপ এরর এড়ানোর কোড
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-from pyrogram import Client
+import re
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from database import search_db, get_file_by_db_id, add_user
 import config
+from urllib.parse import quote
 
-# ২. প্রফেশনাল মোবাইল-রেসপন্সিভ মিনি অ্যাপের HTML টেমপ্লেট
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Download Movie</title>
-    <style>
-        body {{
-            background-color: #121212;
-            color: #ffffff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            text-align: center;
-            padding: 20px;
-            margin: 0;
-        }}
-        .container {{
-            max-width: 450px;
-            margin: 50px auto;
-            background: #1e1e1e;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-        }}
-        h2 {{ color: #e50914; margin-bottom: 5px; font-size: 24px; }}
-        .movie-title {{ font-size: 16px; color: #aaaaaa; margin-bottom: 30px; word-wrap: break-word; }}
-        .step {{
-            background: #2b2b2b;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            text-align: left;
-            border-left: 5px solid #e50914;
-        }}
-        .btn {{
-            display: block;
-            width: 100%;
-            padding: 15px 0;
-            margin: 10px 0;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            text-decoration: none;
-            transition: 0.3s;
-        }}
-        .btn-ad {{
-            background-color: #e50914;
-            color: white;
-        }}
-        .btn-ad:hover {{ background-color: #b20710; }}
-        .btn-download {{
-            background-color: #0088cc;
-            color: white;
-            opacity: 0.5;
-            pointer-events: none; /* প্রথমে এটি লক থাকবে */
-        }}
-        .btn-download.active {{
-            opacity: 1;
-            pointer-events: auto; /* অ্যাড দেখার পর এটি আনলক হবে */
-            box-shadow: 0 0 15px rgba(0, 136, 204, 0.6);
-        }}
-    </style>
-    <script>
-        function unlockDownload() {{
-            // ১. ইউজারের নতুন ট্যাবে বিজ্ঞাপনের লিংক ওপেন করা
-            window.open("{ad_link}", "_blank");
+FILES_PER_PAGE = 5
+
+# --- ফাইলের নাম থেকে অন্যের লিংক এবং ইউজারনেম মুছে দেওয়ার ক্লিন-আপ ফাংশন ---
+def clean_movie_title(name: str) -> str:
+    # টেলিগ্রামের ইউজারনেম মুছে ফেলা (@username)
+    name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
+    # টেলিগ্রামের লিংক মুছে ফেলা (t.me/... বা telegram.me/...)
+    name = re.sub(r'(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_\+]+', '', name)
+    # সাধারণ ওয়েবসাইট লিংক মুছে ফেলা
+    name = re.sub(r'(https?://)?(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z0-9.]+', '', name)
+    # অতিরিক্ত আন্ডারস্কোর, ডট বা স্পেসগুলো সুন্দরভাবে গোছানো
+    name = name.replace("__", "_").replace("..", ".").replace("  ", " ")
+    return name.strip()
+
+# --- ৫ মিনিট পর পাঠানো ফাইলটি স্বয়ংক্রিয়ভাবে মুছে দেওয়ার ব্যাকগ্রাউন্ড টাস্ক ---
+async def auto_delete_file(message: Message):
+    await asyncio.sleep(300) # ৩০০ সেকেন্ড = ৫ মিনিট
+    try:
+        await message.delete()
+    except Exception as e:
+        print(f"Failed to auto delete file: {e}")
+
+
+@Client.on_message(filters.text & filters.private)
+async def main_handler(client: Client, message: Message):
+    text = message.text.strip()
+
+    # --- ১. মিনি অ্যাপ থেকে "Get Movie File" চাপলে ফাইল রিসিভ ও অটো-ডিলিট প্রসেস ---
+    if text.startswith("/start"):
+        if len(text.split()) > 1:
+            file_db_id = text.split()[1]
+            file_data = await get_file_by_db_id(file_db_id)
             
-            // ২. ডাউনলোড বাটনটি আনলক করা
-            setTimeout(function() {{
-                var downloadBtn = document.getElementById("download-btn");
-                downloadBtn.classList.add("active");
-                downloadBtn.innerText = "⚡️ Get Movie File";
-                document.getElementById("step-text").innerText = "ধাপ ২: নিচে আনলক হওয়া বাটনে ক্লিক করে ফাইলটি সংগ্রহ করুন!";
-            }}, 2000); // ২ সেকেন্ড পর আনলক হবে
-        }}
-    </script>
-</head>
-<body>
-    <div class="container">
-        <h2>CTG MOVIE DOWNLOAD</h2>
-        <div class="movie-title">🎬 {movie_title}</div>
+            if file_data:
+                try:
+                    # ফাইলের নাম ক্লিন করা হচ্ছে
+                    raw_name = file_data["file_name"]
+                    cleaned_name = clean_movie_title(raw_name)
+                    file_size = round(file_data["file_size"] / (1024 * 1024), 2)
+                    
+                    # প্রফেশনাল ক্যাপশন ও সতর্কবার্তা
+                    caption_text = (
+                        f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
+                        f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
+                        f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
+                        f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
+                        f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
+                        f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                    )
+                    
+                    # আপনার দেওয়া চ্যানেল লিংক দিয়ে বাটন তৈরি
+                    promo_buttons = [
+                        [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
+                        [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
+                    ]
+                    
+                    # ফাইল পাঠানো হলো
+                    sent_file = await client.send_cached_media(
+                        chat_id=message.chat.id,
+                        file_id=file_data["file_id"],
+                        caption=caption_text,
+                        reply_markup=InlineKeyboardMarkup(promo_buttons)
+                    )
+                    
+                    # ৫ মিনিটের জন্য কাউন্টডাউন শুরু ও ফাইল ডিলিট শিডিউল
+                    asyncio.create_task(auto_delete_file(sent_file))
+                    
+                except Exception as e:
+                    await message.reply_text(f"❌ দুঃখিত, ফাইলটি পাঠানো যাচ্ছে না: {str(e)}")
+            else:
+                await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
+            return
+
+        # সাধারণ স্টার্ট কমান্ড
+        try:
+            await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
+        except:
+            pass
+
+        welcome_text = (
+            f"👋 **হ্যালো {message.from_user.first_name or 'ইউজার'}!**\n\n"
+            f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
+            f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।"
+        )
+        await message.reply_text(welcome_text)
+        return
+
+    if text.startswith("/"):
+        return
+
+    # --- ২. মুভি সার্চ ও মিনি অ্যাপ বাটন ---
+    query = text
+    search_msg = await message.reply_text("🔍 খোঁজা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
+    results = await search_db(query)
+    
+    if not results:
+        await search_msg.edit_text(f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল পাওয়া যায়নি।")
+        return
+
+    await search_msg.delete()
+    await send_search_results(message, results, query, page=0)
+
+
+async def send_search_results(message_or_query, results, query, page=0):
+    total_results = len(results)
+    start_index = page * FILES_PER_PAGE
+    end_index = start_index + FILES_PER_PAGE
+    
+    current_page_results = results[start_index:end_index]
+    
+    # ইউআরএল ক্লিন-আপ
+    raw_url = config.WEB_URL.strip()
+    if raw_url.lower().startswith("https://"):
+        raw_url = raw_url[8:]
+    elif raw_url.lower().startswith("http://"):
+        raw_url = raw_url[7:]
+    if raw_url.endswith("/"):
+        raw_url = raw_url[:-1]
+    
+    buttons = []
+    for file in current_page_results:
+        # সার্চ রেজাল্টেও যাতে অন্যের ইউজারনেম/লিংক না দেখায় তার জন্য ক্লিন করা হচ্ছে
+        file_name = clean_movie_title(file["file_name"])
+        file_size = round(file["file_size"] / (1024 * 1024), 2)
+        db_id = str(file["_id"])
         
-        <div id="step-text" class="step">
-            ধাপ ১: প্রথমে নিচের লাল বাটনে ক্লিক করে ডাউনলোড লিংকটি আনলক (Unlock) করুন।
-        </div>
+        safe_movie_title = quote(file_name)
+        web_app_url = f"https://{raw_url}/download?id={db_id}&title={safe_movie_title}"
         
-        <!-- অ্যাড বাটন (এটিতে ক্লিক করলে ডিরেক্ট অ্যাড ওপেন হবে এবং ডাউনলোড বাটন সচল হবে) -->
-        <button class="btn btn-ad" onclick="unlockDownload()">🔓 Unlock Download Link</button>
+        buttons.append([InlineKeyboardButton(
+            text=f"🎬 {file_name} [{file_size} MB]",
+            web_app=WebAppInfo(url=web_app_url)
+        )])
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ আগের", callback_data=f"page|{page - 1}|{query}"))
+    
+    total_pages = (total_results + FILES_PER_PAGE - 1) // FILES_PER_PAGE
+    nav_buttons.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="pages_info"))
+    
+    if end_index < total_results:
+        nav_buttons.append(InlineKeyboardButton("পরের ▶️", callback_data=f"page|{page + 1}|{query}"))
         
-        <!-- আসল ডাউনলোড বাটন (টেলিগ্রাম বটের চ্যাটে ফেরত নিয়ে যাবে) -->
-        <a id="download-btn" class="btn btn-download" href="https://t.me/{bot_username}?start={file_db_id}">🔒 Locked</a>
-    </div>
-</body>
-</html>
-"""
+    if nav_buttons:
+        buttons.append(nav_buttons)
 
-# ৩. কাস্টম ওয়েব সার্ভার রাউটিং
-class DummyWebServer(SimpleHTTPRequestHandler):
-    def do_GET(self):
-        parsed_url = urlparse(self.path)
-        
-        # যদি ইউজার ডাউনলোডের লিংকে ক্লিক করে
-        if parsed_url.path == "/download":
-            query_params = parse_qs(parsed_url.query)
-            file_db_id = query_params.get("id", [""])[0]
-            movie_title = query_params.get("title", ["Movie File"])[0]
-            
-            # র্যান্ডমলি একটি অ্যাড লিংক সিলেক্ট করা আয়ের জন্য
-            ad_link = random.choice(config.DIRECT_AD_LINKS)
-            
-            # ডাইনামিক ডাটা দিয়ে HTML পেজ তৈরি
-            response_html = HTML_TEMPLATE.format(
-                movie_title=movie_title,
-                file_db_id=file_db_id,
-                bot_username=config.BOT_USERNAME,
-                ad_link=ad_link
-            )
-            
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(response_html.encode("utf-8"))
-            
-        else:
-            # Render-এর নিয়মিত হেলথ চেকের জন্য বেসিক রেসপন্স
-            self.send_response(200)
-            self.send_header("Content-type", "text/html")
-            self.end_headers()
-            self.wfile.write(b"CTG Movie Bot is running alive!")
+    reply_markup = InlineKeyboardMarkup(buttons)
+    text = f"🍿 **'{query}'** এর জন্য প্রাপ্ত ফলাফলসমূহ:"
+    
+    if isinstance(message_or_query, Message):
+        await message_or_query.reply_text(text, reply_markup=reply_markup)
+    else:
+        await message_or_query.message.edit_text(text, reply_markup=reply_markup)
 
-def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), DummyWebServer)
-    print(f"ওয়েব সার্ভার এবং মিনি অ্যাপ পোর্ট {port}-এ চালু হয়েছে।")
-    server.serve_forever()
 
-# ব্যাকগ্রাউন্ড থ্রেডে সার্ভার চালু করা
-threading.Thread(target=run_web_server, daemon=True).start()
+# পেজ নেভিগেশন
+@Client.on_callback_query(filters.regex(r"^page\|"))
+async def page_click_handler(client: Client, callback_query):
+    data = callback_query.data.split("|")
+    target_page = int(data[1])
+    query = data[2]
+    
+    results = await search_db(query)
+    if results:
+        await send_search_results(callback_query, results, query, page=target_page)
+    await callback_query.answer()
 
-# ৪. পাইগ্রাম বট ক্লায়েন্ট
-plugins = dict(root="plugins")
-
-app = Client(
-    "movie_search_bot",
-    api_id=config.API_ID,
-    api_hash=config.API_HASH,
-    bot_token=config.BOT_TOKEN,
-    plugins=plugins
-)
-
-if __name__ == "__main__":
-    print("অভিনন্দন! আপনার মুভি বটটি সফলভাবে চালু হয়েছে।")
-    app.run()
+@Client.on_callback_query(filters.regex(r"^pages_info$"))
+async def pages_info_click(client: Client, callback_query):
+    await callback_query.answer("এটি বর্তমান পেজ নম্বর নির্দেশ করছে।", show_alert=False)
