@@ -5,6 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from database import search_db, get_file_by_db_id, add_user
 import config
+from urllib.parse import quote  # ইউআরএল এনকোড করার জন্য এটি নতুন যোগ করা হয়েছে
 
 FILES_PER_PAGE = 5
 
@@ -12,9 +13,8 @@ FILES_PER_PAGE = 5
 async def main_handler(client: Client, message: Message):
     text = message.text.strip()
 
-    # --- ১. মিনি অ্যাপের "Get Movie" বাটনে ক্লিক করে ফিরে আসলে ফাইল ডেলিভারি ---
+    # --- ১. মিনি অ্যাপ থেকে ফিরে আসলে ফাইল পাঠানো ---
     if text.startswith("/start"):
-        # যদি ইউজার মিনি অ্যাপ থেকে কোনো ফাইলের আইডি নিয়ে ফিরে আসে
         if len(text.split()) > 1:
             file_db_id = text.split()[1]
             file_data = await get_file_by_db_id(file_db_id)
@@ -28,7 +28,6 @@ async def main_handler(client: Client, message: Message):
                         f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
                         f"⚡️ *CTG Movie Bot-এর মাধ্যমে ডাউনলোড করার জন্য ধন্যবাদ!*"
                     )
-                    # ইউজারকে সরাসরি ফাইল পাঠানো হচ্ছে
                     await client.send_cached_media(
                         chat_id=message.chat.id,
                         file_id=file_data["file_id"],
@@ -40,7 +39,7 @@ async def main_handler(client: Client, message: Message):
                 await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
             return
 
-        # সাধারণ স্টার্ট কমান্ড হলে স্টার্ট মেসেজ
+        # সাধারণ স্টার্ট কমান্ড
         try:
             await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
         except:
@@ -57,7 +56,7 @@ async def main_handler(client: Client, message: Message):
     if text.startswith("/"):
         return
 
-    # --- ২. মুভি সার্চ ও মিনি অ্যাপ বাটন জেনারেট ---
+    # --- ২. মুভি সার্চ ও মিনি অ্যাপ বাটন ---
     query = text
     search_msg = await message.reply_text("🔍 খোঁজা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
     results = await search_db(query)
@@ -83,8 +82,10 @@ async def send_search_results(message_or_query, results, query, page=0):
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
         
-        # এখানে সাধারণ কলব্যাক বাটনের বদলে 'web_app' বাটন ব্যবহার করা হয়েছে, যা আপনার Render লিংকে ভিজিট করবে
-        web_app_url = f"https://{config.WEB_URL}/download?id={db_id}&title={file_name}"
+        # এখানে ফাইলের নামটিকে নিরাপদে URL-Encoded করা হচ্ছে যাতে কোনো এরর না আসে
+        safe_movie_title = quote(file_name)
+        
+        web_app_url = f"https://{config.WEB_URL}/download?id={db_id}&title={safe_movie_title}"
         buttons.append([InlineKeyboardButton(
             text=f"🎬 {file_name} [{file_size} MB]",
             web_app=WebAppInfo(url=web_app_url)
@@ -111,7 +112,8 @@ async def send_search_results(message_or_query, results, query, page=0):
     else:
         await message_or_query.message.edit_text(text, reply_markup=reply_markup)
 
-# পেজ নেভিগেশন হ্যান্ডলার (এটি আগের মতোই কাজ করবে)
+
+# পেজ নেভিগেশন হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^page\|"))
 async def page_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
