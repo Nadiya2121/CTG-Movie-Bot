@@ -1,10 +1,11 @@
+# plugins/search.py
+
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
-from database import search_db
+from database import search_db, get_file_by_db_id  # নতুন ফাংশন ইম্পোর্ট করা হয়েছে
 
 @Client.on_message(filters.text & filters.private)
 async def search_handler(client: Client, message: Message):
-    # ইউজার যদি কোনো কমান্ড (যেমন /start) দেয়, তবে সার্চ করবে না
     if message.text.startswith("/"):
         return
 
@@ -14,20 +15,17 @@ async def search_handler(client: Client, message: Message):
     results = await search_db(query)
     
     if not results:
-        await search_msg.edit_text("দুঃখিত, এই নামের কোনো মুভি বা ফাইল খুঁজে পাওয়া যায়নি। বানানটি চেক করে আবার চেষ্টা করুন।")
+        await search_msg.edit_text("দুঃখিত, এই নামের কোনো মুভি বা ফাইল খুঁজে পাওয়া যায়নি।")
         return
 
-    # রেজাল্ট সাজানো (ইউজারদের জন্য বাটন আকারে রেজাল্ট দেখাবে)
     buttons = []
     for file in results:
         file_name = file["file_name"]
-        file_size = round(file["file_size"] / (1024 * 1024), 2) # MB তে কনভার্ট করা
+        file_size = round(file["file_size"] / (1024 * 1024), 2)
         
-        # প্রতিটি ফাইলের জন্য একটি ডাউনলোড বাটন তৈরি করা
-        # এখানে মেসেজ লিঙ্ক বা ফাইল আইডি ব্যবহার করে ফাইল পাঠানো যাবে
-        # সহজে ফাইল ডাউনলোড করার জন্য ফাইল আইডি বা চ্যানেলের মেসেজ লিংক ব্যবহার করা হয়েছে
-        # এখানে আমরা ফাইল সরাসরি পাঠানোর সুবিধা রাখছি
-        buttons.append([InlineKeyboardButton(f"🎬 {file_name} ({file_size} MB)", callback_data=f"file_{file['file_id']}")])
+        # এখানে মঙ্গোডিবির ছোট ইউনিক আইডিটি (যা মাত্র ২৪ অক্ষরের) বাটনে পাঠানো হচ্ছে
+        db_id = str(file["_id"])
+        buttons.append([InlineKeyboardButton(f"🎬 {file_name} ({file_size} MB)", callback_data=f"file_{db_id}")])
 
     await search_msg.delete()
     await message.reply_text(
@@ -35,9 +33,21 @@ async def search_handler(client: Client, message: Message):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# বাটন ক্লিক করলে ফাইল পাঠানোর হ্যান্ডলার
+# বাটন ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^file_"))
 async def send_file(client: Client, callback_query):
-    file_id = callback_query.data.split("_")[1]
-    await callback_query.message.reply_document(file_id)
-    await callback_query.answer()
+    # বাটন থেকে ডাটাবেজ আইডি আলাদা করা
+    file_db_id = callback_query.data.split("_")[1]
+    
+    # ডাটাবেজ থেকে আসল ফাইল ডাটা এবং ফাইল আইডি উদ্ধার করা
+    file_data = await get_file_by_db_id(file_db_id)
+    
+    if file_data:
+        try:
+            # আসল ফাইল আইডি দিয়ে ইউজারকে মুভি পাঠানো হচ্ছে
+            await callback_query.message.reply_document(file_data["file_id"])
+            await callback_query.answer()
+        except Exception as e:
+            await callback_query.answer(f"ফাইল পাঠাতে সমস্যা হচ্ছে: {str(e)}", show_alert=True)
+    else:
+        await callback_query.answer("দুঃখিত, এই ফাইলটি ডাটাবেজে পাওয়া যায়নি!", show_alert=True)
