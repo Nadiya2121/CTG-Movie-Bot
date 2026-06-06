@@ -21,7 +21,7 @@ BOT_USERNAME = "CTGMovieBot"
 
 # Render থেকে পাওয়া আপনার অ্যাপের লিংক (এখানে Render-এর Default Subdomain-টি বসাবেন, শুরুতে https:// বা শেষে / দেবেন না)
 # উদাহরণ: "ctg-movie-bot.onrender.com"
-WEB_URL = "https://gorgeous-donetta-nahidcrk-7b84dba9.koyeb.app/view/CTG-Movie-Bot/"  
+WEB_URL = "https://gorgeous-donetta-nahidcrk-7b84dba9.koyeb.app/view/CTG-Movie-Bot"  
 
 # আপনার আয়ের ডিরেক্ট অ্যাড লিংক (এখানে Adsterra বা অন্য যেকোনো কোম্পানির ডিরেক্ট অ্যাড লিংক বসিয়ে দিন)
 DIRECT_AD_LINKS = [
