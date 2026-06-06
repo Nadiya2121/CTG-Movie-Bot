@@ -11,14 +11,22 @@ import config
 
 FILES_PER_PAGE = 5
 
-# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (মুভির নাম ঠিক রেখে প্রমোশন লিংক ডিলিট করবে) ---
+# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (মুভির নাম ঠিক রেখে শুধুমাত্র লিংক ডিলিট করবে) ---
 def clean_movie_title(name: str) -> str:
+    # ১. টেলিগ্রামের ইউজারনেম মুছে ফেলা (@username)
     name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
+    
+    # ২. টেলিগ্রামের লিংক মুছে ফেলা (t.me/... বা telegram.me/...)
     name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
+    
+    # ৩. শুধুমাত্র সুনির্দিষ্ট ডোমেইন এক্সটেনশনগুলো মুছে ফেলা
     domain_extensions = "com|org|net|xyz|club|co|tv|link|info|me|cc|site|space|click|in|online|icu"
     name = re.sub(r'\b[a-zA-Z0-9-]+\.(' + domain_extensions + r')\b', '', name, flags=re.IGNORECASE)
+    
+    # ৪. অতিরিক্ত স্পেস বা হাইফেন পরিষ্কার করা
     name = re.sub(r'\s*-\s*$', '', name)
     name = name.replace("__", "_").replace("..", ".").replace("  ", " ")
+    
     if not name.strip():
          name = "Movie File"
     return name.strip()
@@ -51,12 +59,11 @@ async def main_handler(client: Client, message: Message):
     if message.chat.type == ChatType.PRIVATE:
         if text.startswith("/start"):
             
-            # --- ১. ফোর্স সাবস্ক্রিপশন চেক (এডমিন ছাড়া বাকি সবার জন্য বাধ্যতামূলক) ---
+            # --- ১. ফোর্স সাবস্ক্রিপশন চেক (এডমিন ছাড়া সবার জন্য) ---
             if user_id != config.ADMIN_ID:
                 try:
                     await client.get_chat_member(config.MAIN_CHANNEL_ID, user_id)
                 except UserNotParticipant:
-                    # জয়েন না থাকলে ব্লক করা হবে
                     fsub_buttons = [
                         [InlineKeyboardButton("🍿 Join Our Movie Channel", url=config.CHANNEL_LINK_1)],
                         [InlineKeyboardButton("🔄 Try Again", url=f"https://t.me/{config.BOT_USERNAME}?start={text[7:]}" if len(text.split()) > 1 else f"https://t.me/{config.BOT_USERNAME}?start=start")]
@@ -69,7 +76,6 @@ async def main_handler(client: Client, message: Message):
                     )
                     return
                 except Exception as e:
-                    # সেফটি ফিল্টার: এডমিন মেকানিজমে ভুল থাকলে যাতে সাধারণ ইউজাররা অন্তত ব্লক না হয়
                     print(f"FSub Warning (Make sure bot is Admin in main channel): {e}")
 
             # --- ২. সিকিউরিটি চেক এবং ফাইল ডেলিভারি ---
@@ -93,7 +99,7 @@ async def main_handler(client: Client, message: Message):
                                 f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
                                 f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
                                 f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                f"কпиরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                             )
                             
                             promo_buttons = [
@@ -139,7 +145,6 @@ async def main_handler(client: Client, message: Message):
                         await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
                     return
 
-            # সাধারণ স্টার্ট কমান্ড
             try:
                 await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
             except:
@@ -147,7 +152,7 @@ async def main_handler(client: Client, message: Message):
 
             welcome_text = (
                 f"👋 **হ্যালো {message.from_user.first_name or 'ইউজার'}!**\n\n"
-                f"🎬 **🎬 CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
+                f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
                 f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।"
             )
             await message.reply_text(welcome_text)
@@ -156,8 +161,16 @@ async def main_handler(client: Client, message: Message):
         if text.startswith("/"):
             return
 
-        # সাধারণ সার্চ কুয়েরি (PM চ্যাটে)
-        query = clean_search_query(text)
+        # --- সাধারণ সার্চ কুয়েরি (PM চ্যাটে - Inline clean logic) ---
+        query = text
+        cleaned_text = text.lower().replace(".", " ").replace("-", " ")
+        noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
+        words = cleaned_text.split()
+        if len(words) > 1:
+            cleaned_words = [w for w in words if w not in noise_words]
+            if cleaned_words:
+                query = " ".join(cleaned_words)
+
         search_msg = await message.reply_text("🔍 খোঁজা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
         results = await search_db(query)
         
@@ -175,7 +188,16 @@ async def main_handler(client: Client, message: Message):
         if text.startswith("/"):
             return
             
-        query = clean_search_query(text)
+        # Inline clean logic (গ্রুপের জন্য)
+        query = text
+        cleaned_text = text.lower().replace(".", " ").replace("-", " ")
+        noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
+        words = cleaned_text.split()
+        if len(words) > 1:
+            cleaned_words = [w for w in words if w not in noise_words]
+            if cleaned_words:
+                query = " ".join(cleaned_words)
+
         results = await search_db(query)
         
         if not results:
