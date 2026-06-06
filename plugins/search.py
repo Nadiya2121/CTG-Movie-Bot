@@ -5,12 +5,24 @@ import re
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from pyrogram.enums import ChatType
-from pyrogram.errors import UserNotParticipant
+from pyrogram.errors import UserNotParticipant, MessageNotModified  # MessageNotModified ইম্পোর্ট করা হয়েছে
 from database import search_db, get_file_by_db_id, add_user
 import config
 
 FILES_PER_PAGE = 5
 
+# --- নয়েজ ওয়ার্ড রিমুভার (ইউজার অতিরিক্ত শব্দ যেমন movie, full, hd লিখলে তা রিমুভ করবে) ---
+def clean_search_query(query: str) -> str:
+    cleaned = query.lower().replace(".", " ").replace("-", " ")
+    noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
+    words = cleaned.split()
+    if len(words) > 1:
+        cleaned_words = [w for w in words if w not in noise_words]
+        if cleaned_words:
+            return " ".join(cleaned_words)
+    return query
+
+# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (মুভির নাম ঠিক রেখে শুধুমাত্র লিংক ডিলিট করবে) ---
 def clean_movie_title(name: str) -> str:
     name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
     name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
@@ -22,15 +34,17 @@ def clean_movie_title(name: str) -> str:
          name = "Movie File"
     return name.strip()
 
+# --- ৫ মিনিট পর ফাইল স্বয়ংক্রিয়ভাবে মুছে দেওয়ার ব্যাকগ্রাউন্ড টাস্ক ---
 async def auto_delete_file(message: Message):
-    await asyncio.sleep(300) # ৫ মিনিট পর ডিলিট
+    await asyncio.sleep(300) # ৩০০ সেকেন্ড = ৫ মিনিট
     try:
         await message.delete()
     except:
         pass
 
+# --- গ্রুপে বটের রিপ্লাই ১ মিনিট পর ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
 async def auto_delete_group_reply(message: Message):
-    await asyncio.sleep(60) # ১ মিনিট পর ডিলিট
+    await asyncio.sleep(60) # ৬০ সেকেন্ড = ১ মিনিট
     try:
         await message.delete()
     except:
@@ -62,13 +76,14 @@ async def main_handler(client: Client, message: Message):
                 )
                 return
             except Exception as e:
-                print(f"FSub Error: {e}")
+                # স্মার্ট সেফটি ফিচার: বট যদি চ্যানেলে এডমিন না থাকে, তবে ক্র্যাশ না করে সরাসরি ফাইল ডাউনলোড করতে দেবে
+                print(f"FSub Warning (Make sure bot is Admin in main channel): {e}")
 
             # --- ২. সিকিউরিটি চেক এবং ফাইল ডেলিভারি ---
             if len(text.split()) > 1:
                 start_param = text.split()[1]
                 
-                # ক. ইউজার যদি বিজ্ঞাপন দেখে আসল চাবি 'get_' সহ ফিরে আসে (১০০% ইনকাম নিশ্চিত)
+                # ক. ইউজার যদি বিজ্ঞাপন দেখে আসল চাবি 'get_' সহ ফিরে আসে
                 if start_param.startswith("get_"):
                     file_db_id = start_param.replace("get_", "")
                     file_data = await get_file_by_db_id(file_db_id)
@@ -85,7 +100,7 @@ async def main_handler(client: Client, message: Message):
                                 f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
                                 f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
                                 f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                f"কпиরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                             )
                             
                             promo_buttons = [
@@ -113,11 +128,9 @@ async def main_handler(client: Client, message: Message):
                     
                     if file_data:
                         file_name = clean_movie_title(file_data["file_name"])
-                        # ইউআরএল স্যানিটাইজার
                         raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
                         web_app_url = f"https://{raw_url}/download?id={file_db_id}"
                         
-                        # সরাসরি ফাইল না পাঠিয়ে বিজ্ঞাপন দেখার মিনি অ্যাপ বাটনটি পাঠানো হলো
                         buttons = [
                             [InlineKeyboardButton(
                                 text="🍿 Open Web App to Download",
@@ -220,16 +233,20 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
     if total_results == 0:
         text_no_file = f"❌ দুঃখিত, আপনার নির্বাচিত ফিল্টারে কোনো ফাইল পাওয়া যায়নি।"
         back_btn = [[InlineKeyboardButton("🔙 Reset Filter", callback_data=f"lang|0|all|{query}")]]
-        if isinstance(message_or_query, Message):
-            await message_or_query.reply_text(text_no_file, reply_markup=InlineKeyboardMarkup(back_btn))
-        else:
-            await message_or_query.message.edit_text(text_no_file, reply_markup=InlineKeyboardMarkup(back_btn))
+        try:
+            if isinstance(message_or_query, Message):
+                await message_or_query.reply_text(text_no_file, reply_markup=InlineKeyboardMarkup(back_btn))
+            else:
+                await message_or_query.message.edit_text(text_no_file, reply_markup=InlineKeyboardMarkup(back_btn))
+        except MessageNotModified:
+            pass
         return
 
     start_index = page * FILES_PER_PAGE
     end_index = start_index + FILES_PER_PAGE
     current_page_results = filtered_results[start_index:end_index]
     
+    # ইউআরএল স্যানিটাইজার
     raw_url = config.WEB_URL.strip()
     if raw_url.lower().startswith("https://"):
         raw_url = raw_url[8:]
@@ -279,10 +296,13 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
     reply_markup = InlineKeyboardMarkup(buttons)
     text = f"🍿 **'{query}'** এর জন্য প্রাপ্ত ফলাফলসমূহ (ফিল্টার: `{lang.upper()}`):"
     
-    if isinstance(message_or_query, Message):
-        await message_or_query.reply_text(text, reply_markup=reply_markup)
-    else:
-        await message_or_query.message.edit_text(text, reply_markup=reply_markup)
+    try:
+        if isinstance(message_or_query, Message):
+            await message_or_query.reply_text(text, reply_markup=reply_markup)
+        else:
+            await message_or_query.message.edit_text(text, reply_markup=reply_markup)
+    except MessageNotModified:
+        pass
 
 
 # ==========================================
