@@ -5,7 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from database import search_db, get_file_by_db_id, add_user
 import config
-from urllib.parse import quote  # ইউআরএল এনকোড করার জন্য এটি নতুন যোগ করা হয়েছে
+from urllib.parse import quote
 
 FILES_PER_PAGE = 5
 
@@ -76,16 +76,29 @@ async def send_search_results(message_or_query, results, query, page=0):
     
     current_page_results = results[start_index:end_index]
     
+    # --- লিংকের ভুলত্রুটি স্বয়ংক্রিয়ভাবে সংশোধন করার ফিল্টার (Sanitizer) ---
+    raw_url = config.WEB_URL.strip()
+    # যদি ভুল করে শুরুতে https:// বা http:// থাকে, তা বাদ দেওয়া হবে
+    if raw_url.lower().startswith("https://"):
+        raw_url = raw_url[8:]
+    elif raw_url.lower().startswith("http://"):
+        raw_url = raw_url[7:]
+    # যদি ভুল করে লিংকের শেষে / থাকে, তাও বাদ দেওয়া হবে
+    if raw_url.endswith("/"):
+        raw_url = raw_url[:-1]
+    
     buttons = []
     for file in current_page_results:
         file_name = file["file_name"]
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
         
-        # এখানে ফাইলের নামটিকে নিরাপদে URL-Encoded করা হচ্ছে যাতে কোনো এরর না আসে
+        # মুভির নাম ইউআরএল এনকোড করা
         safe_movie_title = quote(file_name)
         
-        web_app_url = f"https://{config.WEB_URL}/download?id={db_id}&title={safe_movie_title}"
+        # পরিশোধিত লিংক দিয়ে ফাইনাল ওয়েব অ্যাপ ইউআরএল তৈরি
+        web_app_url = f"https://{raw_url}/download?id={db_id}&title={safe_movie_title}"
+        
         buttons.append([InlineKeyboardButton(
             text=f"🎬 {file_name} [{file_size} MB]",
             web_app=WebAppInfo(url=web_app_url)
