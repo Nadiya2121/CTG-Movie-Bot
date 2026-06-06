@@ -1,13 +1,28 @@
 # plugins/search.py
 
 import asyncio
+import re
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from database import search_db, get_file_by_db_id, add_user
 import config
-from urllib.parse import quote
 
 FILES_PER_PAGE = 5
+
+def clean_movie_title(name: str) -> str:
+    name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
+    name = re.sub(r'(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_\+]+', '', name)
+    name = re.sub(r'(https?://)?(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z0-9.]+', '', name)
+    name = name.replace("__", "_").replace("..", ".").replace("  ", " ")
+    return name.strip()
+
+async def auto_delete_file(message: Message):
+    await asyncio.sleep(300) # ৫ মিনিট পর ডিলিট
+    try:
+        await message.delete()
+    except Exception as e:
+        print(f"Failed to auto delete file: {e}")
+
 
 @Client.on_message(filters.text & filters.private)
 async def main_handler(client: Client, message: Message):
@@ -21,18 +36,33 @@ async def main_handler(client: Client, message: Message):
             
             if file_data:
                 try:
-                    file_name = file_data["file_name"]
+                    raw_name = file_data["file_name"]
+                    cleaned_name = clean_movie_title(raw_name)
                     file_size = round(file_data["file_size"] / (1024 * 1024), 2)
+                    
                     caption_text = (
-                        f"🎬 **ফাইলের নাম:** `{file_name}`\n"
+                        f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
                         f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
-                        f"⚡️ *CTG Movie Bot-এর মাধ্যমে ডাউনলোড করার জন্য ধন্যবাদ!*"
+                        f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
+                        f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
+                        f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
+                        f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                     )
-                    await client.send_cached_media(
+                    
+                    promo_buttons = [
+                        [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
+                        [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
+                    ]
+                    
+                    sent_file = await client.send_cached_media(
                         chat_id=message.chat.id,
                         file_id=file_data["file_id"],
-                        caption=caption_text
+                        caption=caption_text,
+                        reply_markup=InlineKeyboardMarkup(promo_buttons)
                     )
+                    
+                    asyncio.create_task(auto_delete_file(sent_file))
+                    
                 except Exception as e:
                     await message.reply_text(f"❌ দুঃখিত, ফাইলটি পাঠানো যাচ্ছে না: {str(e)}")
             else:
@@ -76,28 +106,26 @@ async def send_search_results(message_or_query, results, query, page=0):
     
     current_page_results = results[start_index:end_index]
     
-    # --- লিংকের ভুলত্রুটি স্বয়ংক্রিয়ভাবে সংশোধন করার ফিল্টার (Sanitizer) ---
+    # ইউআরএল স্যানিটাইজার
     raw_url = config.WEB_URL.strip()
-    # যদি ভুল করে শুরুতে https:// বা http:// থাকে, তা বাদ দেওয়া হবে
     if raw_url.lower().startswith("https://"):
         raw_url = raw_url[8:]
     elif raw_url.lower().startswith("http://"):
         raw_url = raw_url[7:]
-    # যদি ভুল করে লিংকের শেষে / থাকে, তাও বাদ দেওয়া হবে
     if raw_url.endswith("/"):
         raw_url = raw_url[:-1]
     
     buttons = []
     for file in current_page_results:
-        file_name = file["file_name"]
+        file_name = clean_movie_title(file["file_name"])
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
         
-        # মুভির নাম ইউআরএল এনকোড করা
-        safe_movie_title = quote(file_name)
+        # ইউআরএলটি এখন অত্যন্ত ছোট ও নিরাপদ (কোনো স্পেশাল ক্যারেক্টার সমস্যা করবে না)
+        web_app_url = f"https://{raw_url}/download?id={db_id}"
         
-        # পরিশোধিত লিংক দিয়ে ফাইনাল ওয়েব অ্যাপ ইউআরএল তৈরি
-        web_app_url = f"https://{raw_url}/download?id={db_id}&title={safe_movie_title}"
+        # ডিবাগ করার জন্য আপনি লগে লিংকটি দেখতে পারবেন
+        print(f"DEBUG WebApp URL: {web_app_url}")
         
         buttons.append([InlineKeyboardButton(
             text=f"🎬 {file_name} [{file_size} MB]",
@@ -126,7 +154,7 @@ async def send_search_results(message_or_query, results, query, page=0):
         await message_or_query.message.edit_text(text, reply_markup=reply_markup)
 
 
-# পেজ নেভিগেশন হ্যান্ডলার
+# পেজ নেভিগেশন
 @Client.on_callback_query(filters.regex(r"^page\|"))
 async def page_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
