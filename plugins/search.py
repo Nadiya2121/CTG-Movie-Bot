@@ -2,7 +2,8 @@
 
 import asyncio
 import re
-from fuzzywuzzy import process  # লুসিয়া বটের অফিশিয়াল fuzzywuzzy লাইব্রেরি ইম্পোর্ট করা হয়েছে
+import difflib
+from fuzzywuzzy import process, fuzz  # fuzz ইম্পোর্ট করা হয়েছে স্ট্রিক্ট সর্টিংয়ের জন্য
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from pyrogram.enums import ChatType
@@ -56,7 +57,7 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- fuzzywuzzy ভিত্তিক আল্ট্রা-পাওয়ারফুল বানান ভুল সংশোধন সাজেশন মেকানিজম ---
+# --- fuzzywuzzy ভিত্তিক স্ট্রিক্ট স্পেলিং চেকার (আংশিক মিলের ট্র্যাপ এড়াতে fuzz.ratio যুক্ত) ---
 async def get_close_match_from_db(query: str):
     try:
         from database import files_col1, files_col2
@@ -96,12 +97,12 @@ async def get_close_match_from_db(query: str):
         # ইউজারের সার্চ কোয়েরি নরমাল করা হচ্ছে
         query_norm = query.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
         
-        # fuzzywuzzy দিয়ে ১ মিলিসেকেন্ডে সবচেয়ে কাছের মুভিটি খুঁজে বের করা
-        best_match_tuple = process.extractOne(query_norm, list(name_map.keys()))
+        # fuzz.ratio ব্যবহার করে স্ট্রিক্ট ম্যাচ (যাতে ছোট আংশিক নামের ফাইল বড় কোয়েরিকে ধোঁকা দিতে না পারে)
+        best_match_tuple = process.extractOne(query_norm, list(name_map.keys()), scorer=fuzz.ratio)
         
         if best_match_tuple:
             best_match, score = best_match_tuple
-            # স্কোর ৪০ এর ওপরে হলে (অর্থাৎ ৪০% মিল থাকলে) সেটি সাজেস্ট করবে
+            # স্কোর ৪০ এর ওপরে হলে সেটি সাজেস্ট করবে
             if score >= 40:
                 return name_map[best_match]
                 
@@ -121,7 +122,7 @@ def clean_search_query(query: str) -> str:
             return " ".join(cleaned_words)
     return query
 
-# --- প্রফেশনাল এআই প্রগ্রেসিভ সার্চ ইঞ্জিন (wrong year/language হ্যান্ডলার) ---
+# --- প্রফেশনাল এআই প্রগ্রেসিভ সার্চ ইঞ্জিন ---
 async def advanced_search_db(query: str):
     results = await search_db(query)
     if results:
@@ -209,7 +210,6 @@ async def main_handler(client: Client, message: Message):
                                 [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
                             ]
                             
-                            # এখানে 'chat_id=message.chat.id' টাইপোটি সফলভাবে ফিক্স করা হয়েছে
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
@@ -319,7 +319,7 @@ async def main_handler(client: Client, message: Message):
         # প্রগ্রেসিভ সার্চ রান করা হচ্ছে
         results, matched_query = await advanced_search_db(query)
         
-        # --- ১. এআই স্পেলিং কারেক্টর লজিক (PM চ্যাটের জন্য - fuzzywuzzy চালিত) ---
+        # --- ১. এআই স্পেলিং কারেক্টর লজিক (PM চ্যাটের জন্য - fuzzywuzzy fuzz.ratio চালিত) ---
         if not results:
             await search_msg.edit_text("🤖 **ভুল বানান শনাক্ত হয়েছে! AI বানান সংশোধন করছে...**")
             await asyncio.sleep(1.5) 
@@ -375,7 +375,7 @@ async def main_handler(client: Client, message: Message):
 
         results, matched_query = await advanced_search_db(query)
         
-        # --- ২. এআই স্পেলিং কারেক্টর লজিক (গ্রুপ চ্যাটের জন্য - fuzzywuzzy চালিত) ---
+        # --- ২. এআই স্পেলিং কারেক্টর লজিক (গ্রুপ চ্যাটের জন্য - fuzzywuzzy fuzz.ratio চালিত) ---
         if not results:
             closest_match = await get_close_match_from_db(query)
             if closest_match:
