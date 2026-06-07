@@ -4,11 +4,11 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 import config
-from database import save_file
+from database import save_file, get_active_files_collection
 
 INDEX_STATES = {}
 
-# রিকোয়েস্টকারী ইউজারকে মুভি আপলোড হওয়া মাত্র নোটিফাই করার অটোমেটিক টাস্ক
+# রিকোয়েস্টকারী ইউজারকে মুভি আপলোড হওয়া মাত্র নোটিফাই করার টাস্ক
 async def check_and_notify_requests(client: Client, file_name: str, file_db_id: str):
     try:
         from database import db1
@@ -67,12 +67,12 @@ async def auto_index(client: Client, message: Message):
             asyncio.create_task(check_and_notify_requests(client, file.file_name, str(doc["_id"])))
 
 
-# ম্যানুয়াল ইনডেক্সিং (Secure Batch ID Method)
+# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch Method)
 @Client.on_message(filters.command("index") & filters.user(config.ADMIN_ID) & filters.private)
 async def index_start_cmd(client: Client, message: Message):
     INDEX_STATES[message.from_user.id] = True
     instructions = (
-        "📥 **চ্যানেল ইনডেক্সিং কন্ট্রোল প্যানেল**\n\n"
+        "📥 **চ্যানেল ইনডেক্সিং কন্ট্রোল প্যানেল (Turbo Speed)**\n\n"
         "অন্য যেকোনো চ্যানেল থেকে সব মুভি ইনডেক্স করতে নিচের নিয়ম অনুসরণ করুন:\n\n"
         "১️⃣ প্রথমে নিশ্চিত করুন বটটি ওই চ্যানেলে **অ্যাডমিন (Admin)** হিসেবে যুক্ত আছে।\n"
         "২️⃣ এবার ওই চ্যানেলের **সর্বশেষ (Last) ফাইল বা মেসেজটি** এখানে ফরোয়ার্ড (Forward) করুন।\n\n"
@@ -94,55 +94,92 @@ async def process_index_forward(client: Client, message: Message):
 
     chat_id = message.forward_from_chat.id
     last_msg_id = message.forward_from_message_id
-    status_msg = await message.reply_text("⏳ **ইনডেক্সিং কানেকশন তৈরি হচ্ছে...**")
+    status_msg = await message.reply_text("⏳ **Turbo Speed ইনডেক্সিং কানেকশন তৈরি হচ্ছে...**")
     
     saved_count = 0
-    skipped_count = 0  # নতুন স্কিপড ডুপ্লিকেট কাউন্টার
+    skipped_count = 0  
     scanned_count = 0
-    chunk_size = 100
+    
+    # ব্যাচ সাইজ ২০০ ক্যারেক্টার করা হয়েছে স্পিড বাড়াতে
+    chunk_size = 200
     current_id = last_msg_id
+    last_edit_scanned_count = 0 # মেসেজ এডিট ট্র্যাকার
 
     try:
+        active_col = await get_active_files_collection()
+        
         while current_id > 0:
             start_id = max(1, current_id - chunk_size + 1)
             msg_ids = list(range(start_id, current_id + 1))
+            
+            # ২০০টি মেসেজ এক ক্লিকে রিসিভ করা হচ্ছে
             messages_batch = await client.get_messages(chat_id, msg_ids)
             
+            batch_files = []
             for msg in reversed(messages_batch):
                 scanned_count += 1
                 if not msg or msg.empty:
                     continue
                 if msg.document or msg.video:
                     file = msg.document or msg.video
-                    saved = await save_file(
-                        file_name=file.file_name,
-                        file_size=file.file_size,
-                        file_id=file.file_id,
-                        chat_id=chat_id,
-                        message_id=msg.id
-                    )
-                    if saved:
-                        saved_count += 1
-                        from database import files_col1
-                        doc = await files_col1.find_one({"file_id": file.file_id})
-                        if doc:
-                            asyncio.create_task(check_and_notify_requests(client, file.file_name, str(doc["_id"])))
-                    else:
-                        skipped_count += 1 # ডুপ্লিকেট হলে কাউন্টার ১ করে বাড়বে
+                    batch_files.append({
+                        "file_name": file.file_name,
+                        "file_size": file.file_size,
+                        "file_id": file.file_id,
+                        "chat_id": chat_id,
+                        "message_id": msg.id
+                    })
 
-            # লাইভ প্রোগ্রেস বার (রিয়েল-টাইম ডুপ্লিকেট স্কিপ কাউন্ট সহ)
-            await status_msg.edit_text(
-                f"⏳ **মুভি ইনডেক্সিং চলমান রয়েছে (Secure Method)...**\n\n"
-                f"🔎 স্ক্যান করা মেসেজ: `{scanned_count}`/`{last_msg_id}` টি\n"
-                f"📥 নতুন সংরক্ষিত মুভি: `{saved_count}` টি\n"
-                f"♻️ ডুপ্লিকেট ফাইল স্কিপড: `{skipped_count}` টি\n\n"
-                f"⚙️ *অনুগ্রহ করে সম্পূর্ণ শেষ হওয়া পর্যন্ত অপেক্ষা করুন।*"
-            )
+            # ডাটাবেজে বাল্ক বা একসাথে ২০০টি ফাইল সেভ করার লজিক (১টি রিকোয়েস্টে)
+            if batch_files:
+                file_ids = [f["file_id"] for f in batch_files]
+                file_names = [f["file_name"] for f in batch_files]
+                
+                # একবারে ডাটাবেজ থেকে ডুপ্লিকেট লিস্ট খুঁজে বের করা
+                existing_docs = await active_col.find({
+                    "$or": [
+                        {"file_id": {"$in": file_ids}},
+                        {"file_name": {"$in": file_names}}
+                    ]
+                }).to_list(length=len(batch_files))
+                
+                existing_ids = {d["file_id"] for d in existing_docs}
+                existing_name_sizes = {(d["file_name"], d["file_size"]) for d in existing_docs}
+                
+                # পাইথনের মেমরিতে ডুপ্লিকেট ফিল্টার
+                to_insert = []
+                for f in batch_files:
+                    if f["file_id"] not in existing_ids and (f["file_name"], f["file_size"]) not in existing_name_sizes:
+                        to_insert.append(f)
+                    else:
+                        skipped_count += 1
+                
+                # একসাথে সব ইউনিক ফাইল ডাটাবেজে সেভ (insert_many)
+                if to_insert:
+                    await active_col.insert_many(to_insert)
+                    saved_count += len(to_insert)
+                    
+                    # ব্যাকগ্রাউন্ডে রিকোয়েস্টকারীদের নোটিফিকেশন পাঠানো (ফায়ার এন্ড ফরগেট)
+                    for doc in to_insert:
+                        doc_id = str(doc["_id"])
+                        asyncio.create_task(check_and_notify_requests(client, doc["file_name"], doc_id))
+
+            # টেলিগ্রাম ফ্ল্যাড ওয়েট এড়াতে প্রতি ১০০০ মেসেজ স্ক্যান করার পর কেবল ১ বার মেসেজ এডিট হবে
+            if scanned_count - last_edit_scanned_count >= 1000 or current_id <= chunk_size:
+                await status_msg.edit_text(
+                    f"⏳ **মুভি ইনডেক্সিং চলমান রয়েছে (Turbo Speed ⚡️)...**\n\n"
+                    f"🔎 স্ক্যান করা মেসেজ: `{scanned_count}`/`{last_msg_id}` টি\n"
+                    f"📥 নতুন সংরক্ষিত মুভি: `{saved_count}` টি\n"
+                    f"♻️ ডুপ্লিকেট ফাইল স্কিপড: `{skipped_count}` টি\n\n"
+                    f"⚙️ *বট বিরতিহীনভাবে রকেটের গতিতে কাজ করছে।*"
+                )
+                last_edit_scanned_count = scanned_count
+                await asyncio.sleep(1.2) # সেফটি রেট লিমিট বিরতি
+
             current_id -= chunk_size
-            await asyncio.sleep(1.5)
 
         await status_msg.edit_text(
-            f"🎉 **ইনডেক্সিং সফলভাবে সম্পন্ন হয়েছে!**\n\n"
+            f"🎉 **ইনডেক্সিং সফলভাবে সম্পন্ন হয়েছে (Turbo Finish)!**\n\n"
             f"📊 **চূড়ান্ত রিপোর্ট:**\n"
             f"🔎 মোট স্ক্যানকৃত মেসেজ: `{scanned_count}` টি\n"
             f"📥 মোট ইনডেক্সকৃত মুভি: `{saved_count}` টি\n"
