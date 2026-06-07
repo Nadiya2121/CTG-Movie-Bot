@@ -61,6 +61,7 @@ async def get_close_match_from_db(query: str):
     try:
         from database import files_col1, files_col2
         
+        # ৩ অক্ষরের চেয়ে বড় শব্দগুলো আলাদা করা
         words = [w for w in query.strip().split() if len(w) >= 3]
         if not words:
             return None
@@ -282,7 +283,7 @@ async def main_handler(client: Client, message: Message):
                         welcome_msg = await message.reply_photo(
                             photo=config.START_BANNER,
                             caption=welcome_text,
-                            welcome_msg = await message.reply_photo(photo=config.START_BANNER, caption=welcome_text, reply_markup=InlineKeyboardMarkup(start_buttons))
+                            reply_markup=InlineKeyboardMarkup(start_buttons)
                         )
                 except Exception as e:
                     print(f"Error sending banner: {e}")
@@ -318,7 +319,7 @@ async def main_handler(client: Client, message: Message):
             
         # ১.২ দ্বিতীয় ধাপ: ভুল বানান হলে সবার আগে এআই স্পেলিং চেকার (fuzzywuzzy) রান হবে
         await search_msg.edit_text("🤖 **ভুল বানান শনাক্ত হয়েছে! AI বানান সংশোধন করছে...**")
-        await asyncio.sleep(1.2) 
+        await asyncio.sleep(1.5) 
         
         closest_match = await get_close_match_from_db(query)
         
@@ -327,7 +328,7 @@ async def main_handler(client: Client, message: Message):
                 f"✅ **AI সাজেস্ট করেছে:** `{closest_match}`\n"
                 f"🔄 **স্বয়ংক্রিয়ভাবে খোঁজা হচ্ছে:** `{closest_match}`..."
             )
-            await asyncio.sleep(1.2) 
+            await asyncio.sleep(1.5) 
             
             # সাজেস্টেড নাম দিয়ে অটো-সার্চ
             corrected_results, _ = await advanced_search_db(closest_match)
@@ -345,7 +346,7 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_search_messages(message, results_msg))
             return
 
-        # ১.৪ চতুর্থ ধাপ: যদি কোনোভাবেই ফাইল না পাওয়া যায়
+        # ১.৪ quarto ধাপ: যদি কোনোভাবেই ফাইল না পাওয়া যায়
         req_buttons = [
             [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{query}")]
         ]
