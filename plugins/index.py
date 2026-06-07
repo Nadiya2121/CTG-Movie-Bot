@@ -4,13 +4,13 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 import config
-from database import save_file
+# database থেকে get_active_files_collection ইম্পোর্ট করা হয়েছে (এরর ফিক্স)
+from database import save_file, get_active_files_collection
 
 INDEX_STATES = {}
 
 # রিকোয়েস্টকারী ইউজারকে মুভি আপলোড হওয়া মাত্র নোটিফাই করার অটোমেটিক টাস্ক (সেফটি সহ)
 async def check_and_notify_requests(client: Client, file_name: str, file_db_id: str):
-    # নাম ফাঁকা থাকলে সেফগার্ড
     if not file_name or not isinstance(file_name, str):
         return
         
@@ -58,7 +58,6 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
 async def auto_index(client: Client, message: Message):
     file = message.document or message.video
     
-    # নাম ফাঁকা থাকলে সেফগার্ড
     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
     
     saved = await save_file(
@@ -126,7 +125,6 @@ async def process_index_forward(client: Client, message: Message):
                     continue
                 if msg.document or msg.video:
                     file = msg.document or msg.video
-                    # নাম ফাঁকা থাকলে সেফগার্ড
                     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
                     
                     batch_files.append({
