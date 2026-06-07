@@ -3,7 +3,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import config
-import re  # re.escape ব্যবহারের জন্য ইম্পোর্ট করা হয়েছে
+import re
 
 client1 = AsyncIOMotorClient(config.DATABASE_URI)
 db1 = client1["movie_search_bot"]
@@ -40,9 +40,19 @@ async def add_user(user_id, username, first_name):
             "first_name": first_name
         })
 
+# --- আপগ্রেডকৃত ডুপ্লিকেট প্রটেকশন ফাইল সেভ লজিক ---
 async def save_file(file_name, file_size, file_id, chat_id, message_id):
     active_col = await get_active_files_collection()
-    exists = await active_col.find_one({"file_id": file_id})
+    
+    # ডাবল ভেরিফিকেশন চেক: আইডি মিললে অথবা নাম ও সাইজ উভয়ই হুবহু মিললে ডুপ্লিকেট ধরা হবে
+    exists = await active_col.find_one({
+        "$or": [
+            {"file_id": file_id},
+            {"file_name": file_name, "file_size": file_size}
+        ]
+    })
+    
+    # ফাইলটি ডুপ্লিকেট না হলেই কেবল ডাটাবেজে সেভ হবে
     if not exists:
         file_data = {
             "file_name": file_name,
@@ -52,26 +62,24 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
             "message_id": message_id
         }
         await active_col.insert_one(file_data)
-        return True
-    return False
+        return True # সফলভাবে সেভ হয়েছে
+        
+    return False # ডুপ্লিকেট ফাইল হওয়ায় স্বয়ংক্রিয়ভাবে স্কিপ করা হয়েছে
 
-# --- আপগ্রেডকৃত অ্যান্ড সার্চ লজিক (যা নামের মাঝে স্পেস বা ডটের ভুল সংশোধন করবে) ---
+# অ্যান্ড সার্চ লজিক
 async def search_db(query):
     words = query.strip().split()
     if not words:
         return []
     
-    # প্রতিটি শব্দের জন্য আলাদা রেগুলার এক্সপ্রেশন তৈরি করে অ্যান্ড (AND) কুয়েরি চালানো হচ্ছে
     regex_list = [{"file_name": {"$regex": re.escape(w), "$options": "i"}} for w in words]
     query_filter = {"$and": regex_list} if len(regex_list) > 1 else regex_list[0]
     
     results = []
-    # ১ম ডাটাবেজে সার্চ
     cursor1 = files_col1.find(query_filter).limit(30)
     async for doc in cursor1:
         results.append(doc)
         
-    # ২য় ডাটাবেজে সার্চ (MULTIPLE_DB সচল থাকলে)
     if config.MULTIPLE_DB and files_col2:
         cursor2 = files_col2.find(query_filter).limit(30)
         async for doc in cursor2:
