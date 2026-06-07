@@ -9,6 +9,7 @@ from pyrogram.enums import ChatType
 from pyrogram.errors import UserNotParticipant, MessageNotModified
 from database import search_db, get_file_by_db_id, add_user, save_movie_request
 import config
+from urllib.parse import quote
 
 FILES_PER_PAGE = 5
 
@@ -52,7 +53,18 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- বানান ভুল সংশোধন সাজেশন মেকানিজম ---
+# --- নয়েজ ওয়ার্ড রিমুভার ---
+def clean_search_query(query: str) -> str:
+    cleaned = query.lower().replace(".", " ").replace("-", " ")
+    noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
+    words = cleaned.split()
+    if len(words) > 1:
+        cleaned_words = [w for w in words if w not in noise_words]
+        if cleaned_words:
+            return " ".join(cleaned_words)
+    return query
+
+# --- বানান ভুল সংশোধন সাজেশন মেকানিজম (Fuzzy Matching) ---
 async def get_close_match_from_db(query: str):
     try:
         from database import files_col1
@@ -66,17 +78,6 @@ async def get_close_match_from_db(query: str):
     except Exception as e:
         print(f"Fuzzy match error: {e}")
         return None
-
-# --- নয়েজ ওয়ার্ড রিমুভার (ইউজার অতিরিক্ত শব্দ যেমন movie, full, hd লিখলে তা রিমুভ করবে) ---
-def clean_search_query(query: str) -> str:
-    cleaned = query.lower().replace(".", " ").replace("-", " ")
-    noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
-    words = cleaned.split()
-    if len(words) > 1:
-        cleaned_words = [w for w in words if w not in noise_words]
-        if cleaned_words:
-            return " ".join(cleaned_words)
-    return query
 
 
 @Client.on_message(filters.text)
@@ -113,7 +114,7 @@ async def main_handler(client: Client, message: Message):
             if len(text.split()) > 1:
                 start_param = text.split()[1]
                 
-                # ক. ইউজার যদি বিজ্ঞাপন দেখে আসল চাবি 'get_' সহ ফিরে আসে
+                # ক. ইউজার যদি বিজ্ঞাপন দেখে আসল চাবি 'get_' সহ ফিরে আসে (১০০% ইনকাম নিশ্চিত)
                 if start_param.startswith("get_"):
                     file_db_id = start_param.replace("get_", "")
                     file_data = await get_file_by_db_id(file_db_id)
@@ -130,7 +131,7 @@ async def main_handler(client: Client, message: Message):
                                 f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
                                 f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
                                 f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                f"কпиরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                             )
                             
                             promo_buttons = [
@@ -154,7 +155,7 @@ async def main_handler(client: Client, message: Message):
                 
                 # খ. ইউজার যদি গ্রুপ থেকে সরাসরি বটের চ্যাটে আসে (এখনো বিজ্ঞাপন দেখেনি)
                 else:
-                    file_db_id = start_param
+                    file_db_id = start_param.replace("app_", "")
                     file_data = await get_file_by_db_id(file_db_id)
                     
                     if file_data:
@@ -178,7 +179,7 @@ async def main_handler(client: Client, message: Message):
                         await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
                     return
 
-            # সাধারণ স্টার্ট কমান্ড (ব্যানার এবং বাটন গ্রিড)
+            # সাধারণ স্টার্ট কমান্ড (ব্যানার এবং প্রিমিয়াম ৪টি মেনু বাটন গ্রিড)
             try:
                 await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
             except:
@@ -233,43 +234,41 @@ async def main_handler(client: Client, message: Message):
             return
 
         # --- সাধারণ সার্চ কুয়েরি (PM চ্যাটে) ---
-        query = text
-        cleaned_text = text.lower().replace(".", " ").replace("-", " ")
-        noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
-        words = cleaned_text.split()
-        if len(words) > 1:
-            cleaned_words = [w for w in words if w not in noise_words]
-            if cleaned_words:
-                query = " ".join(cleaned_words)
-
+        query = clean_search_query(text)
         search_msg = await message.reply_text("🔍 খোঁজা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
         results = await search_db(query)
         
-        # যদি কোনো ফাইল ডাটাবেজে খুঁজে পাওয়া না যায় (Fuzzy Auto-Suggestion লজিক)
+        # --- ১. এআই স্পেলিং কারেক্টর লজিক (PM চ্যাটের জন্য) ---
         if not results:
+            await search_msg.edit_text("🤖 **ভুল বানান শনাক্ত হয়েছে! AI বানান সংশোধন করছে...**")
+            await asyncio.sleep(1.5) # রিয়ালিস্টিক এআই ফিল ট্রানজিশন
+            
             closest_match = await get_close_match_from_db(query)
             
             if closest_match:
-                suggestion_buttons = [
-                    [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"tsearch|{closest_match}")]
-                ]
                 await search_msg.edit_text(
-                    f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল আমাদের সার্ভারে পাওয়া যায়নি।\n\n"
-                    f"🤔 আপনি কি **'{closest_match}'** মুভিটি বোঝাতে চেয়েছেন?\n"
-                    f"নিচের বাটনে চাপ দিলে স্বয়ংক্রিয়ভাবে মুভিটি সার্চ হয়ে যাবে।",
-                    reply_markup=InlineKeyboardMarkup(suggestion_buttons)
+                    f"✅ **AI সাজেস্ট করেছে:** `{closest_match}`\n"
+                    f"🔄 **স্বয়ংক্রিয়ভাবে খোঁজা হচ্ছে:** `{closest_match}`..."
                 )
-            else:
-                # যদি কোনো সাজেশনও না পাওয়া যায়, তবে "মুভি রিকোয়েস্ট" বাটন দেওয়া হবে
-                req_buttons = [
-                    [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{query}")]
-                ]
-                await search_msg.edit_text(
-                    f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল পাওয়া যায়নি।\n\n"
-                    f"👉 আপনি চাইলে নিচের বাটনে ক্লিক করে এডমিনকে রিকোয়েস্ট পাঠাতে পারেন। মুভিটি আপলোড হওয়ার সাথে সাথে আপনার ইনবক্সে নোটিফিকেশন চলে আসবে।",
-                    reply_markup=InlineKeyboardMarkup(req_buttons)
-                )
+                await asyncio.sleep(1.5) # স্মুথ ট্রানজিশন
                 
+                # সাজেস্টেড নাম দিয়ে অটো-সার্চ
+                corrected_results = await search_db(closest_match)
+                if corrected_results:
+                    await search_msg.delete()
+                    results_msg = await send_search_results(message, corrected_results, closest_match, page=0, lang="all")
+                    asyncio.create_task(auto_delete_search_messages(message, results_msg))
+                    return
+            
+            # সাজেশন কাজ না করলে রিকোয়েস্ট বাটন শো করবে
+            req_buttons = [
+                [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{query}")]
+            ]
+            await search_msg.edit_text(
+                f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল আমাদের সার্ভারে পাওয়া যায়নি।\n\n"
+                f"👉 আপনি চাইলে নিচের বাটনে ক্লিক করে এডমিনকে রিকোয়েস্ট পাঠাতে পারেন। মুভিটি আপলোড হওয়ার সাথে সাথে আপনার ইনবক্সে নোটিফিকেশন চলে আসবে।",
+                reply_markup=InlineKeyboardMarkup(req_buttons)
+            )
             asyncio.create_task(auto_delete_search_messages(message, search_msg))
             return
 
@@ -278,29 +277,21 @@ async def main_handler(client: Client, message: Message):
         asyncio.create_task(auto_delete_search_messages(message, results_msg))
 
     # ==========================================
-    # --- খ. গ্রুপ চ্যাট হ্যান্ডলার (Auto-Filter Group Mode) ---
+    # --- খ. গ্রুপ চ্যাট হ্যান্ডলার (Auto-Filter Group Mode with Full Pagination) ---
     # ==========================================
     elif message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
         if text.startswith("/"):
             return
             
-        query = text
-        cleaned_text = text.lower().replace(".", " ").replace("-", " ")
-        noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
-        words = cleaned_text.split()
-        if len(words) > 1:
-            cleaned_words = [w for w in words if w not in noise_words]
-            if cleaned_words:
-                query = " ".join(cleaned_words)
-
+        query = clean_search_query(text)
         results = await search_db(query)
         
-        # গ্রুপে মুভি না পাওয়া গেলে বটের স্বয়ংক্রিয় সাজেশন ও রিকোয়েস্ট ট্রিক
+        # --- ২. এআই স্পেলিং কারেক্টর সাজেশন লজিক (গ্রুপ চ্যাটের জন্য - ইউজার লকড) ---
         if not results:
             closest_match = await get_close_match_from_db(query)
             if closest_match:
                 suggestion_buttons = [
-                    [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"tsearch|{closest_match}")]
+                    [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"gtsearch|{closest_match}|{user_id}")]
                 ]
                 suggestion_msg = await message.reply_text(
                     f"❌ দুঃখিত {message.from_user.mention}, আপনার খোঁজা ফাইলটি পাওয়া যায়নি।\n\n"
@@ -320,7 +311,7 @@ async def main_handler(client: Client, message: Message):
                 asyncio.create_task(auto_delete_group_reply(not_found_msg))
             return
             
-        # গ্রুপ চ্যাটের ভেতরেই প্রথম পেজের ফলাফল প্রেরণ
+        # গ্রুপ চ্যাটের ভেতরেই প্রথম পেজের ফলাফল প্রেরণ (গ্রুপ পেজিনেশন যুক্ত করা হয়েছে)
         group_reply = await send_group_results(message, results, query, page=0, searcher_id=user_id)
         asyncio.create_task(auto_delete_group_reply(group_reply))
 
@@ -419,7 +410,7 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
         pass
 
 
-# --- গ্রুপের ভেতরেই পেজিনেশন বাটন জেনারেট করার নতুন ফাংশন (নতুন) ---
+# --- গ্রুপের ভেতরেই পেজিনেশন বাটন জেনারেট করার ফাংশন (ইউজার লকড) ---
 async def send_group_results(message_or_query, results, query, page=0, searcher_id=0):
     total_results = len(results)
     start_index = page * FILES_PER_PAGE
@@ -432,13 +423,11 @@ async def send_group_results(message_or_query, results, query, page=0, searcher_
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
         
-        # গ্রুপের বাটনগুলো ইউজার আইডিসহ লকড থাকবে
         buttons.append([InlineKeyboardButton(
             text=f"🎬 {file_name} [{file_size} MB]",
             callback_data=f"gfile|{db_id}|{searcher_id}"
         )])
 
-    # গ্রুপ চ্যাটের জন্য বিশেষ ইউজার-লকড নেভিগেশন বাটন
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("◀️ আগের", callback_data=f"gpage|{page - 1}|{query}|{searcher_id}"))
@@ -517,6 +506,7 @@ async def group_file_click_handler(client: Client, callback_query):
         )
         return
 
+    # আসল ইউজার ক্লিক করলে তাকে বটের ইনবক্সে রিডাইরেক্ট করা হচ্ছে (চাবি সহ)
     await callback_query.answer(
         url=f"https://t.me/{config.BOT_USERNAME}?start={file_db_id}"
     )
@@ -535,7 +525,7 @@ async def premium_info_click_handler(client: Client, callback_query):
     )
     await callback_query.answer(premium_text, show_alert=True)
 
-# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (Fuzzy "Did You Mean" Auto-Search)
+# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (Fuzzy "Did You Mean" Auto-Search - PM চ্যাটের জন্য)
 @Client.on_callback_query(filters.regex(r"^tsearch\|"))
 async def tsearch_click_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
@@ -566,7 +556,7 @@ async def request_movie_handler(client: Client, callback_query):
     else:
         await callback_query.answer("⚠️ আপনি ইতিমধ্যেই এই মুভিটির রিকোয়েস্ট পাঠিয়েছেন!", show_alert=True)
 
-# --- ৭. গ্রুপ পেজ নেভিগেশন বাটন ক্লিক হ্যান্ডলার (ইউজার লকড - নতুন) ---
+# ৭. গ্রুপ পেজ নেভিগেশন বাটন ক্লিক হ্যান্ডলার (ইউজার লকড)
 @Client.on_callback_query(filters.regex(r"^gpage\|"))
 async def group_page_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
@@ -575,7 +565,6 @@ async def group_page_click_handler(client: Client, callback_query):
     searcher_id = int(data[3])
     clicker_id = callback_query.from_user.id
     
-    # লকড চেক
     if clicker_id != searcher_id:
         await callback_query.answer(
             "⚠️ দুঃখিত! এই পেজ পরিবর্তন করার ক্ষমতা শুধু সার্চকারীর রয়েছে। নিজে গ্রুপে নাম লিখে সার্চ করুন।", 
@@ -587,3 +576,27 @@ async def group_page_click_handler(client: Client, callback_query):
     if results:
         await send_group_results(callback_query, results, query, page=target_page, searcher_id=searcher_id)
     await callback_query.answer()
+
+# ৮. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (Fuzzy "Did You Mean" Auto-Search - গ্রুপ চ্যাটের জন্য - নতুন)
+@Client.on_callback_query(filters.regex(r"^gtsearch\|"))
+async def gtsearch_click_handler(client: Client, callback_query):
+    data = callback_query.data.split("|")
+    query = data[1]
+    searcher_id = int(data[2])
+    clicker_id = callback_query.from_user.id
+    
+    if clicker_id != searcher_id:
+        await callback_query.answer(
+            "⚠️ দুঃখিত! এই সার্চ সাজেশনটি আপনার জন্য নয়। অনুগ্রহ করে নিজে গ্রুপে নাম লিখে সার্চ করুন।", 
+            show_alert=True
+        )
+        return
+        
+    await callback_query.message.delete()
+    results = await search_db(query)
+    if results:
+        # গ্রুপ রেজাল্ট পাঠানো
+        group_reply = await send_group_results(callback_query, results, query, page=0, searcher_id=searcher_id)
+        asyncio.create_task(auto_delete_group_reply(group_reply))
+    else:
+        await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
