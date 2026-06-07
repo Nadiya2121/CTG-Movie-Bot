@@ -42,10 +42,10 @@ async def add_user(user_id, username, first_name):
             "first_name": first_name
         })
 
+# ডুপ্লিকেট প্রটেকশন ফাইল সেভ লজিক
 async def save_file(file_name, file_size, file_id, chat_id, message_id):
     active_col = await get_active_files_collection()
     
-    # নাম ফাঁকা থাকলে ডিফল্ট নাম দেওয়া হচ্ছে
     file_name = file_name if file_name else f"Video_File_{file_size}"
     
     exists = await active_col.find_one({
@@ -68,9 +68,11 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
         
     return False
 
-# অ্যান্ড সার্চ লজিক
+# অ্যান্ড সার্চ ও রিয়েল-টাইম সর্টিং লজিক (গ্লোবাল কুয়েরি স্যানিটাইজার যুক্ত করা হয়েছে)
 async def search_db(query):
-    words = query.strip().split()
+    # কুয়েরিতে ডট, আন্ডারস্কোর বা হাইফেন যাই থাকুক, সেটিকে স্পেস বানিয়ে শব্দ আলাদা করা হচ্ছে (১০০% সুরক্ষিত)
+    clean_q = query.lower().replace(".", " ").replace("_", " ").replace("-", " ")
+    words = clean_q.strip().split()
     if not words:
         return []
     
@@ -90,7 +92,6 @@ async def search_db(query):
                 
     # স্মার্ট সর্টিং অ্যালগরিদম
     def get_sort_key(doc):
-        # নাম ফাঁকা থাকলে সেফটি হ্যান্ডলার
         name = doc.get("file_name", "Movie File").lower()
         q = query.lower()
         if q == name:
@@ -131,7 +132,6 @@ async def get_detailed_stats():
         
     return total_files, total_users, used_mb, free_mb, free_percent
 
-# --- এডমিন ফাইলের কম্প্যাটিবিলিটির জন্য get_stats ফাংশনটি পুনরুজ্জীবিত করা হলো ---
 async def get_stats():
     total_files, total_users, _, _, _ = await get_detailed_stats()
     return total_files, total_users
