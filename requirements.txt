@@ -1,4 +1,4 @@
-pyrogram
-tgcrypto
-motor
-dnspython
+pyrofork==2.3.69
+tgcrypto-pyrofork
+motor==3.7.0
+dnspython==2.6.1
