@@ -56,25 +56,35 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- এন্টারপ্রাইজ-লেভেল বানান ভুল সংশোধন সাজেশন মেকানিজম (২ লাখ ফাইলের জন্য অপ্টিমাইজড) ---
+# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার (২ লাখ ফাইলের জন্য চূড়ান্ত অপ্টিমাইজড) ---
 async def get_close_match_from_db(query: str):
     try:
         from database import files_col1, files_col2
         
-        # ১. সার্চ কোয়েরি থেকে ৩ অক্ষরের চেয়ে বড় মূল শব্দগুলো আলাদা করা হচ্ছে
+        # ১. সার্চ কোয়েরি থেকে ৩ অক্ষরের চেয়ে বড় শব্দগুলো আলাদা করা
         words = [w for w in query.strip().split() if len(w) >= 3]
         if not words:
             return None
             
-        # প্রথম প্রধান শব্দটিকে (যেমন: 'Poran') ক্যান্ডিডেট কি-ওয়ার্ড হিসেবে নেওয়া হলো
-        keyword = words[0]
-        
         name_map = {}
-        # ২ লাখ ফাইল থেকে শুধুমাত্র 'Poran' সম্বলিত ২০০টি ফাইল ফিল্টার করার মঙ্গোডিবি কোয়েরি
-        query_filter = {"file_name": {"$regex": re.escape(keyword), "$options": "i"}}
         
-        # ১ম ডাটাবেজ থেকে ক্যান্ডিডেট মুভি আনা
-        cursor = files_col1.find(query_filter, {"file_name": 1}).limit(200)
+        # ২. ডাইনামিক ফিল্টারিং লজিক (স্পেস ও নামের গোলমাল এড়াতে)
+        if len(words) >= 2:
+            # যদি একাধিক শব্দ থাকে, তবে প্রথম দুটি শব্দ একসাথে আছে এমন ফাইলগুলো খুঁজব (যেমন: 'poran' এবং 'jai')
+            # এটি 'Poran' মুভিকে বাদ দিয়ে সরাসরি 'Poran Jai Jaliya Re' খুঁজে বের করবে
+            query_filter = {
+                "$and": [
+                    {"file_name": {"$regex": re.escape(words[0]), "$options": "i"}},
+                    {"file_name": {"$regex": re.escape(words[1]), "$options": "i"}}
+                ]
+            }
+        else:
+            # যদি মাত্র ১টি শব্দের কোয়েরি হয়, তবে প্রথম ৩টি অক্ষর দিয়ে মিল খুঁজব
+            keyword = words[0][:3]
+            query_filter = {"file_name": {"$regex": re.escape(keyword), "$options": "i"}}
+        
+        # ডাটাবেজ থেকে ক্যান্ডিডেট মুভি আনা (১০০০ লিমিট করা হয়েছে যাতে কোনো কোয়ালিটি মিস না হয়)
+        cursor = files_col1.find(query_filter, {"file_name": 1}).limit(1000)
         async for doc in cursor:
             fname = doc.get("file_name")
             if fname:
@@ -82,9 +92,9 @@ async def get_close_match_from_db(query: str):
                 normalized = cleaned.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
                 name_map[normalized] = cleaned
                 
-        # ২য় ডাটাবেজ সচল থাকলে সেখান থেকেও আনা
+        # ২য় ডাটাবেজ সচল থাকলে
         if config.MULTIPLE_DB and files_col2:
-            cursor2 = files_col2.find(query_filter, {"file_name": 1}).limit(200)
+            cursor2 = files_col2.find(query_filter, {"file_name": 1}).limit(1000)
             async for doc in cursor2:
                 fname = doc.get("file_name")
                 if fname:
@@ -92,10 +102,10 @@ async def get_close_match_from_db(query: str):
                     normalized = cleaned.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
                     name_map[normalized] = cleaned
         
-        # ৩. ইউজারের সার্চ কোয়েরি নরমাল করা হচ্ছে
+        # ইউজারের সার্চ কোয়েরি নরমাল করা হচ্ছে
         query_norm = query.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
         
-        # ৪. শুধুমাত্র ফিল্টার হওয়া ২০০টি ফাইলের সাথে তুলনা (এটি ১ মিলিসেকেন্ড সময় নেবে এবং সম্পূর্ণ নির্ভুল হবে)
+        # ক্লোজ ম্যাচ তুলনা করা (মিলি-সেকেন্ডে রেজাল্ট দেবে)
         matches = difflib.get_close_matches(query_norm, list(name_map.keys()), n=1, cutoff=0.35)
         
         if matches:
@@ -177,7 +187,7 @@ async def main_handler(client: Client, message: Message):
                             ]
                             
                             sent_file = await client.send_cached_media(
-                                chat_id=message.chat.id,
+                                id=message.chat.id,
                                 file_id=file_data["file_id"],
                                 caption=caption_text,
                                 reply_markup=InlineKeyboardMarkup(promo_buttons)
