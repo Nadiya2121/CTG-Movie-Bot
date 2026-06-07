@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import difflib  # বানান সংশোধনের Fuzzy matching এর জন্য পাইথনের নিজস্ব লাইব্রেরি
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from pyrogram.enums import ChatType
@@ -11,7 +12,7 @@ import config
 
 FILES_PER_PAGE = 5
 
-# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন ---
+# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (মুভির নাম ঠিক রেখে প্রমোশন লিংক ডিলিট করবে) ---
 def clean_movie_title(name: str) -> str:
     name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
     name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
@@ -23,7 +24,7 @@ def clean_movie_title(name: str) -> str:
          name = "Movie File"
     return name.strip()
 
-# --- ৫ মিনিট পর পাঠানো ফাইলটি স্বয়ংক্রিয়ভাবে মুছে দেওয়ার ব্যাকগ্রাউন্ড টাস্ক ---
+# --- ৫ মিনিট পর ফাইল স্বয়ংক্রিয়ভাবে মুছে দেওয়ার ব্যাকগ্রাউন্ড টাস্ক ---
 async def auto_delete_file(message: Message):
     await asyncio.sleep(300) # ৩০০ সেকেন্ড = ৫ মিনিট
     try:
@@ -31,9 +32,9 @@ async def auto_delete_file(message: Message):
     except:
         pass
 
-# --- ৫ মিনিট পর ইউজারের সার্চ এবং বটের বাটন মেসেজ ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক (নতুন) ---
+# --- ৫ মিনিট পর ইউজারের সার্চ এবং বটের বাটন মেসেজ ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
 async def auto_delete_search_messages(user_msg: Message, bot_msg: Message):
-    await asyncio.sleep(300) # ৩০০ সেকেন্ড = ৫ মিনিট
+    await asyncio.sleep(300)
     try:
         await user_msg.delete()
     except:
@@ -45,11 +46,28 @@ async def auto_delete_search_messages(user_msg: Message, bot_msg: Message):
 
 # --- গ্রুপে বটের রিপ্লাই ১ মিনিট পর ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
 async def auto_delete_group_reply(message: Message):
-    await asyncio.sleep(60) # ৬০ সেকেন্ড = ১ মিনিট
+    await asyncio.sleep(60)
     try:
         await message.delete()
     except:
         pass
+
+# --- বানান ভুল সংশোধন সাজেশন মেকানিজম (Did You Mean?) ---
+async def get_close_match_from_db(query: str):
+    try:
+        # ডাটাবেজ থেকে মুভির আসল নামগুলো এনে একটি তুলনামূলক লিস্ট তৈরি করা
+        from database import files_col1
+        all_names = []
+        cursor = files_col1.find({}, {"file_name": 1}).limit(1000) # পারফরম্যান্স বজায় রাখতে সর্বোচ্চ ১০০০ ফাইল স্ক্যান করবে
+        async for doc in cursor:
+            all_names.append(clean_movie_title(doc["file_name"]))
+            
+        # difflib দিয়ে সবচেয়ে কাছাকাছি বানানের নামটি খুঁজে বের করা (cutoff ০.৩৫ রাখা হয়েছে যাতে বেশি ভুল থাকলেও খুঁজে পায়)
+        matches = difflib.get_close_matches(query, list(set(all_names)), n=1, cutoff=0.35)
+        return matches[0] if matches else None
+    except Exception as e:
+        print(f"Fuzzy match error: {e}")
+        return None
 
 
 @Client.on_message(filters.text)
@@ -103,7 +121,7 @@ async def main_handler(client: Client, message: Message):
                                 f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
                                 f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
                                 f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                f"কпиরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                             )
                             
                             promo_buttons = [
@@ -118,8 +136,6 @@ async def main_handler(client: Client, message: Message):
                                 reply_markup=InlineKeyboardMarkup(promo_buttons)
                             )
                             asyncio.create_task(auto_delete_file(sent_file))
-                            
-                            # ৫ মিনিট পর ইউজারের পাঠানো /start এবং স্বাগত বার্তাও ডিলিট করে দেওয়া হচ্ছে
                             asyncio.create_task(auto_delete_search_messages(message, sent_file))
                         except Exception as e:
                             await message.reply_text(f"❌ দুঃখিত, ফাইলটি পাঠানো যাচ্ছে না: {str(e)}")
@@ -148,13 +164,12 @@ async def main_handler(client: Client, message: Message):
                             f"👉 ফাইলটি ডাউনলোড করার জন্য নিচের বাটনে ক্লিক করে বিজ্ঞাপনটি আনলক করুন।",
                             reply_markup=InlineKeyboardMarkup(buttons)
                         )
-                        # ৫ মিনিট পর ইউজারের গ্রুপ লিঙ্ক মেসেজ এবং মিনি অ্যাপ বাটনটি ডিলিট হবে
                         asyncio.create_task(auto_delete_search_messages(message, app_msg))
                     else:
                         await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
                     return
 
-            # সাধারণ স্টার্ট কমান্ড
+            # সাধারণ স্টার্ট কমান্ড (ব্যানার ব্যানার এবং স্থায়ী ৪টি মেনু বাটন গ্রিড)
             try:
                 await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
             except:
@@ -163,10 +178,47 @@ async def main_handler(client: Client, message: Message):
             welcome_text = (
                 f"👋 **হ্যালো {message.from_user.first_name or 'ইউজার'}!**\n\n"
                 f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
-                f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।"
+                f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।\n\n"
+                f"📢 **ব্যবহারের নিয়মাবলী:**\n"
+                f"১. মুভির নাম বানান সঠিক রেখে লিখে পাঠান।\n"
+                f"২. নিচের বাটনগুলো ব্যবহার করে আমাদের প্রফেশনাল গ্রুপ ও চ্যানেলে যুক্ত হতে পারেন।"
             )
-            welcome_msg = await message.reply_text(welcome_text)
-            # ৫ মিনিট পর ইউজারের পাঠানো /start এবং স্বাগত বার্তা ডিলিট হবে
+
+            # ৪টি প্রিমিয়াম ইনলাইন বাটনের স্থায়ী গ্রিড
+            start_buttons = [
+                [
+                    InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
+                    InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
+                ],
+                [
+                    InlineKeyboardButton("👑 Premium Membership", callback_data="premium_info"),
+                    InlineKeyboardButton("💬 Movie Search Group", url=config.CHANNEL_LINK_1)
+                ]
+            ]
+            
+            # ব্যানার সোর্স অনুযায়ী ইমেজ বা জিআইএফ সেন্ড করা হবে
+            welcome_msg = None
+            if config.START_BANNER:
+                try:
+                    if config.START_BANNER.lower().endswith(".gif"):
+                        welcome_msg = await message.reply_animation(
+                            animation=config.START_BANNER,
+                            caption=welcome_text,
+                            reply_markup=InlineKeyboardMarkup(start_buttons)
+                        )
+                    else:
+                        welcome_msg = await message.reply_photo(
+                            photo=config.START_BANNER,
+                            caption=welcome_text,
+                            reply_markup=InlineKeyboardMarkup(start_buttons)
+                        )
+                except Exception as e:
+                    print(f"Error sending banner: {e}")
+                    welcome_msg = await message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(start_buttons))
+            else:
+                welcome_msg = await message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(start_buttons))
+
+            # ৫ মিনিট পর ইউজার মেসেজ এবং স্বাগত বার্তা ডিলিট
             asyncio.create_task(auto_delete_search_messages(message, welcome_msg))
             return
 
@@ -186,16 +238,29 @@ async def main_handler(client: Client, message: Message):
         search_msg = await message.reply_text("🔍 খোঁজা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
         results = await search_db(query)
         
+        # যদি কোনো ফাইল ডাটাবেজে খুঁজে পাওয়া না যায় (Fuzzy Auto-Suggestion লজিক)
         if not results:
-            await search_msg.edit_text(f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল পাওয়া যায়নি।")
-            # মুভি না পাওয়া গেলেও ৫ মিনিট পর ইউজারের সার্চ এবং বটের নো-ফাইল মেসেজ ডিলিট হবে
+            closest_match = await get_close_match_from_db(query)
+            
+            if closest_match:
+                # কাছাকাছি নামের সাজেশন বাটন সহ রিপ্লাই দেওয়া হচ্ছে
+                suggestion_buttons = [
+                    [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"tsearch|{closest_match}")]
+                ]
+                await search_msg.edit_text(
+                    f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল পাওয়া যায়নি।\n\n"
+                    f"🤔 আপনি কি **'{closest_match}'** বোঝাতে চেয়েছেন?\n"
+                    f"নিচের বাটনে চাপ দিলে স্বয়ংক্রিয়ভাবে মুভিটি সার্চ হয়ে যাবে।",
+                    reply_markup=InlineKeyboardMarkup(suggestion_buttons)
+                )
+            else:
+                await search_msg.edit_text(f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল পাওয়া যায়নি।")
+                
             asyncio.create_task(auto_delete_search_messages(message, search_msg))
             return
 
         await search_msg.delete()
         results_msg = await send_search_results(message, results, query, page=0, lang="all")
-        
-        # ৫ মিনিট পর ইউজারের সার্চ কুয়েরি এবং সার্চ রেজাল্ট বাটন উভয়ই ডিলিট হবে (চ্যাট ফ্রেশ রাখার জন্য)
         asyncio.create_task(auto_delete_search_messages(message, results_msg))
 
     # ==========================================
@@ -216,7 +281,19 @@ async def main_handler(client: Client, message: Message):
 
         results = await search_db(query)
         
+        # গ্রুপে মুভি না পাওয়া গেলে বটের স্বয়ংক্রিয় সাজেশন ট্রিক
         if not results:
+            closest_match = await get_close_match_from_db(query)
+            if closest_match:
+                suggestion_buttons = [
+                    [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"tsearch|{closest_match}")]
+                ]
+                suggestion_msg = await message.reply_text(
+                    f"❌ দুঃখিত {message.from_user.mention}, আপনার খোঁজা ফাইলটি পাওয়া যায়নি।\n\n"
+                    f"🤔 আপনি কি **'{closest_match}'** মুভিটি খুঁজছেন?",
+                    reply_markup=InlineKeyboardMarkup(suggestion_buttons)
+                )
+                asyncio.create_task(auto_delete_group_reply(suggestion_msg))
             return
             
         buttons = []
@@ -366,11 +443,12 @@ async def lang_click_handler(client: Client, callback_query):
         await send_search_results(callback_query, results, query, page=target_page, lang=lang)
     await callback_query.answer()
 
+# ৩. প্রোগ্রেসিভ পেজ ইনফো
 @Client.on_callback_query(filters.regex(r"^pages_info$"))
 async def pages_info_click(client: Client, callback_query):
     await callback_query.answer("এটি বর্তমান পেজ নম্বর এবং ফিল্টার নির্দেশ করছে।", show_alert=False)
 
-# ৩. গ্রুপ ফাইল ক্লিক ভেরিফিকেশন
+# ৪. গ্রুপ ফাইল ক্লিক ভেরিফিকেশন (ইউজার লকড)
 @Client.on_callback_query(filters.regex(r"^gfile\|"))
 async def group_file_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
@@ -385,7 +463,37 @@ async def group_file_click_handler(client: Client, callback_query):
         )
         return
 
-    # আসল ইউজার ক্লিক করলে তাকে বটের ইনবক্সে রিডাইরেক্ট করা হচ্ছে
     await callback_query.answer(
         url=f"https://t.me/{config.BOT_USERNAME}?start={file_db_id}"
     )
+
+# ৫. প্রিমিয়াম পপ-আপ ইনফো অ্যালার্ট (নতুন)
+@Client.on_callback_query(filters.regex(r"^premium_info$"))
+async def premium_info_click_handler(client: Client, callback_query):
+    premium_text = (
+        "👑 CTG MOVIE PREMIUM BENEFITS:\n\n"
+        "⚡️ Ad-Free (মিনি অ্যাপ ও বিজ্ঞাপন ছাড়াই সরাসরি ফাইল!)\n"
+        "🚀 Unlimited High-Speed Direct Files!\n"
+        "🤖 Personal Admin Support & Movie Request!\n\n"
+        "💵 Price: 50 BDT / Month\n"
+        "📞 Bkash/Nagad: 018XXXXXXXX\n\n"
+        "👉 সেন্ড মানি করার পর ট্রানজিশন আইডি সহ স্ক্রিনশট এডমিনকে ইনবক্সে পাঠিয়ে দিন।"
+    )
+    await callback_query.answer(premium_text, show_alert=True)
+
+# ৬. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (Fuzzy "Did You Mean" Auto-Search - নতুন)
+@Client.on_callback_query(filters.regex(r"^tsearch\|"))
+async def tsearch_click_handler(client: Client, callback_query):
+    query = callback_query.data.split("|")[1]
+    
+    # লোডিং বাটন মুছে দেওয়া
+    await callback_query.message.delete()
+    
+    # নতুন সার্চ রান করা হচ্ছে স্বয়ংক্রিয়ভাবে
+    results = await search_db(query)
+    if results:
+        results_msg = await send_search_results(callback_query.message, results, query, page=0, lang="all")
+        # ৫ মিনিট পর ক্লিন-আপ টাস্ক শুরু
+        asyncio.create_task(auto_delete_search_messages(callback_query.message, results_msg))
+    else:
+        await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
