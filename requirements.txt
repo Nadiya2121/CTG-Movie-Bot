@@ -4,3 +4,4 @@ motor==3.7.0
 dnspython==2.6.1
 fuzz.ratio
 python-Levenshtein==0.27.3
+fuzzywuzzy
