@@ -4,6 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import config
 import re
+import difflib
 
 client1 = AsyncIOMotorClient(config.DATABASE_URI)
 db1 = client1["movie_search_bot"]
@@ -41,11 +42,12 @@ async def add_user(user_id, username, first_name):
             "first_name": first_name
         })
 
-# ডুপ্লিকেট প্রটেকশন ফাইল সেভ লজিক
 async def save_file(file_name, file_size, file_id, chat_id, message_id):
     active_col = await get_active_files_collection()
     
-    # ডুপ্লিকেট চেক
+    # নাম ফাঁকা থাকলে ডিফল্ট নাম দেওয়া হচ্ছে
+    file_name = file_name if file_name else f"Video_File_{file_size}"
+    
     exists = await active_col.find_one({
         "$or": [
             {"file_id": file_id},
@@ -88,7 +90,8 @@ async def search_db(query):
                 
     # স্মার্ট সর্টিং অ্যালগরিদম
     def get_sort_key(doc):
-        name = doc["file_name"].lower()
+        # নাম ফাঁকা থাকলে সেফটি হ্যান্ডলার
+        name = doc.get("file_name", "Movie File").lower()
         q = query.lower()
         if q == name:
             return 0
@@ -109,22 +112,17 @@ async def get_file_by_db_id(db_id):
     except Exception:
         return None
 
-# --- মুভি ও ইউজারের পাশাপাশি মঙ্গোডিবির লাইভ মেমরি স্ট্যাটাস বের করার চূড়ান্ত ফাংশন ---
+# মঙ্গোডিবির লাইভ মেমরি স্ট্যাটাস বের করার ফাংশন
 async def get_detailed_stats():
-    # মোট ফাইল ও ইউজার কাউন্ট
     total_files = await files_col1.estimated_document_count()
     if config.MULTIPLE_DB and files_col2:
         total_files += await files_col2.estimated_document_count()
     total_users = await users_col.estimated_document_count()
     
-    # মঙ্গোডিবির স্টোরেজ হিসাব (এমবি-তে)
     try:
         stats = await db1.command("dbstats")
-        # storageSize (কমপ্রেসড সাইজ) এবং indexSize (ইনডেক্সিং সাইজ) যোগ করা হচ্ছে
         used_bytes = stats.get("storageSize", 0) + stats.get("indexSize", 0)
-        used_mb = round(used_bytes / (1024 * 1024), 2) # এমবি-তে কনভার্ট করা হলো
-        
-        # মঙ্গোডিবি ফ্রি টিয়ারের লিমিট ৫১২ এমবি
+        used_mb = round(used_bytes / (1024 * 1024), 2)
         free_mb = round(512.0 - used_mb, 2)
         free_percent = round((free_mb / 512.0) * 100, 1)
     except Exception as e:
@@ -132,6 +130,11 @@ async def get_detailed_stats():
         used_mb, free_mb, free_percent = 0.01, 512.0, 100.0
         
     return total_files, total_users, used_mb, free_mb, free_percent
+
+# --- এডমিন ফাইলের কম্প্যাটিবিলিটির জন্য get_stats ফাংশনটি পুনরুজ্জীবিত করা হলো ---
+async def get_stats():
+    total_files, total_users, _, _, _ = await get_detailed_stats()
+    return total_files, total_users
 
 async def delete_files_by_name(query):
     count = await files_col1.delete_many({"file_name": {"$regex": query, "$options": "i"}})
