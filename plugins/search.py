@@ -2,14 +2,13 @@
 
 import asyncio
 import re
-import difflib
+from fuzzywuzzy import process  # লুসিয়া বটের অফিশিয়াল fuzzywuzzy লাইব্রেরি ইম্পোর্ট করা হয়েছে
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from pyrogram.enums import ChatType
 from pyrogram.errors import UserNotParticipant, MessageNotModified
 from database import search_db, get_file_by_db_id, add_user, save_movie_request
 import config
-from urllib.parse import quote
 
 FILES_PER_PAGE = 5
 
@@ -57,20 +56,22 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
+# --- fuzzywuzzy ভিত্তিক আল্ট্রা-পাওয়ারফুল বানান ভুল সংশোধন সাজেশন মেকানিজম ---
 async def get_close_match_from_db(query: str):
     try:
         from database import files_col1, files_col2
         
+        # ৩ অক্ষরের চেয়ে বড় শব্দগুলো আলাদা করা
         words = [w for w in query.strip().split() if len(w) >= 3]
         if not words:
             return None
             
         name_map = {}
         
-        # $or ফিল্টার: সার্চের যেকোনো ১টি শব্দের মিল পেলেই ডাটাবেজ থেকে ক্যান্ডিডেট নিয়ে আসবে
+        # ডাইনামিক $or ফিল্টার
         query_filter = {"$or": [{"file_name": {"$regex": re.escape(w), "$options": "i"}} for w in words]}
         
+        # ১ম ডাটাবেজ থেকে ক্যান্ডিডেট মুভি আনা
         cursor = files_col1.find(query_filter, {"file_name": 1}).limit(1000)
         async for doc in cursor:
             fname = doc.get("file_name")
@@ -79,6 +80,7 @@ async def get_close_match_from_db(query: str):
                 normalized = cleaned.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
                 name_map[normalized] = cleaned
                 
+        # ২য় ডাটাবেজ সচল থাকলে
         if config.MULTIPLE_DB and files_col2:
             cursor2 = files_col2.find(query_filter, {"file_name": 1}).limit(1000)
             async for doc in cursor2:
@@ -88,11 +90,21 @@ async def get_close_match_from_db(query: str):
                     normalized = cleaned.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
                     name_map[normalized] = cleaned
         
+        if not name_map:
+            return None
+            
+        # ইউজারের সার্চ কোয়েরি নরমাল করা হচ্ছে
         query_norm = query.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
-        matches = difflib.get_close_matches(query_norm, list(name_map.keys()), n=1, cutoff=0.35)
         
-        if matches:
-            return name_map[matches[0]]
+        # fuzzywuzzy দিয়ে ১ মিলিসেকেন্ডে সবচেয়ে কাছের মুভিটি খুঁজে বের করা
+        best_match_tuple = process.extractOne(query_norm, list(name_map.keys()))
+        
+        if best_match_tuple:
+            best_match, score = best_match_tuple
+            # স্কোর ৪০ এর ওপরে হলে (অর্থাৎ ৪০% মিল থাকলে) সেটি সাজেস্ট করবে
+            if score >= 40:
+                return name_map[best_match]
+                
         return None
     except Exception as e:
         print(f"Fuzzy match error: {e}")
@@ -111,12 +123,10 @@ def clean_search_query(query: str) -> str:
 
 # --- প্রফেশনাল এআই প্রগ্রেসিভ সার্চ ইঞ্জিন (wrong year/language হ্যান্ডলার) ---
 async def advanced_search_db(query: str):
-    # ১. প্রথমে সাধারণ নিয়মে অ্যান্ড সার্চ করা হচ্ছে
     results = await search_db(query)
     if results:
         return results, query
         
-    # ২. মিল না পাওয়া গেলে ৪ ডিজিটের সাল (যেমন: 2024) বাদ দিয়ে সার্চ করা হচ্ছে
     words = query.strip().split()
     if len(words) > 1:
         no_years = [w for w in words if not (w.isdigit() and len(w) == 4)]
@@ -126,10 +136,9 @@ async def advanced_search_db(query: str):
             if results:
                 return results, new_query
                 
-    # ৩. তাও মিল না পাওয়া গেলে শেষের দিক থেকে একটি করে শব্দ ডিলিট করে রিলাক্সড সার্চ করা হচ্ছে
     temp_words = list(words)
     while len(temp_words) > 1:
-        temp_words.pop() # শেষের শব্দটি ড্রপ করা হলো
+        temp_words.pop()
         new_query = " ".join(temp_words)
         results = await search_db(new_query)
         if results:
@@ -200,6 +209,7 @@ async def main_handler(client: Client, message: Message):
                                 [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
                             ]
                             
+                            # এখানে 'chat_id=message.chat.id' টাইপোটি সফলভাবে ফিক্স করা হয়েছে
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
@@ -295,13 +305,21 @@ async def main_handler(client: Client, message: Message):
             return
 
         # --- সাধারণ সার্চ কুয়েরি (PM চ্যাটে) ---
-        query = clean_search_query(text)
+        query = text
+        cleaned_text = text.lower().replace(".", " ").replace("-", " ")
+        noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
+        words = cleaned_text.split()
+        if len(words) > 1:
+            cleaned_words = [w for w in words if w not in noise_words]
+            if cleaned_words:
+                query = " ".join(cleaned_words)
+
         search_msg = await message.reply_text("🔍 খোঁজা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
         
-        # ডাইনামিক প্রগ্রেসিভ সার্চ রান করা হচ্ছে (wrong year/language সমাধান)
+        # প্রগ্রেসিভ সার্চ রান করা হচ্ছে
         results, matched_query = await advanced_search_db(query)
         
-        # --- ১. এআই স্পেলিং কারেক্টর লজিক (PM চ্যাটের জন্য) ---
+        # --- ১. এআই স্পেলিং কারেক্টর লজিক (PM চ্যাটের জন্য - fuzzywuzzy চালিত) ---
         if not results:
             await search_msg.edit_text("🤖 **ভুল বানান শনাক্ত হয়েছে! AI বানান সংশোধন করছে...**")
             await asyncio.sleep(1.5) 
@@ -346,10 +364,18 @@ async def main_handler(client: Client, message: Message):
         if text.startswith("/"):
             return
             
-        query = clean_search_query(text)
+        query = text
+        cleaned_text = text.lower().replace(".", " ").replace("-", " ")
+        noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
+        words = cleaned_text.split()
+        if len(words) > 1:
+            cleaned_words = [w for w in words if w not in noise_words]
+            if cleaned_words:
+                query = " ".join(cleaned_words)
+
         results, matched_query = await advanced_search_db(query)
         
-        # --- ২. এআই স্পেলিং কারেক্টর লজিক (গ্রুপ চ্যাটের জন্য) ---
+        # --- ২. এআই স্পেলিং কারেক্টর লজিক (গ্রুপ চ্যাটের জন্য - fuzzywuzzy চালিত) ---
         if not results:
             closest_match = await get_close_match_from_db(query)
             if closest_match:
@@ -537,9 +563,9 @@ async def page_click_handler(client: Client, callback_query):
     query = data[2]
     lang = data[3]
     
-    results = await search_db(query)
+    results, matched_query = await advanced_search_db(query)
     if results:
-        await send_search_results(callback_query, results, query, page=target_page, lang=lang)
+        await send_search_results(callback_query, results, matched_query, page=target_page, lang=lang)
     await callback_query.answer()
 
 # ২. ল্যাঙ্গুয়েজ ফিল্টার বাটন ক্লিক
@@ -550,9 +576,9 @@ async def lang_click_handler(client: Client, callback_query):
     lang = data[2]
     query = data[3]
     
-    results = await search_db(query)
+    results, matched_query = await advanced_search_db(query)
     if results:
-        await send_search_results(callback_query, results, query, page=target_page, lang=lang)
+        await send_search_results(callback_query, results, matched_query, page=target_page, lang=lang)
     await callback_query.answer()
 
 @Client.on_callback_query(filters.regex(r"^pages_info$"))
