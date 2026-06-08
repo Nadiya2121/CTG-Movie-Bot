@@ -25,7 +25,7 @@ def clean_movie_title(name: str) -> str:
     domain_extensions = "com|org|net|xyz|club|co|tv|link|info|me|cc|site|space|click|in|online|icu"
     name = re.sub(r'\b[a-zA-Z0-9-]+\.(' + domain_extensions + r')\b', '', name, flags=re.IGNORECASE)
     
-    # ৩. মুভি ফাইল এক্সটেনশন ডিলিট (যাতে .mkv বা .mp4 দেখতে আনপ্রফেশনাল না লাগে)
+    # ৩. মুভি ফাইল এক্সটেনশন ডিলিট
     name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
     
     # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
@@ -66,12 +66,12 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার (fuzz.ratio চালিত এবং আন্ডারস্কোর ফিক্সড) ---
+# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
 async def get_close_match_from_db(query: str):
     try:
         from database import files_col1, files_col2
         
-        # ৩ অক্ষরের চেয়ে বড় শব্দগুলো আলাদা করা (ডট, ড্যাশ ও আন্ডারস্কোর রিমুভ করে)
+        # ৩ অক্ষরের চেয়ে বড় শব্দগুলো আলাদা করা
         clean_q = query.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
         words = [w for w in clean_q.split() if len(w) >= 3]
         if not words:
@@ -79,7 +79,7 @@ async def get_close_match_from_db(query: str):
             
         name_map = {}
         
-        # ডাইনামিক $or ফিল্টার (যেকোনো একটি শব্দের মিল পেলেই ক্যান্ডিডেট নিয়ে আসবে)
+        # ডাইনামিক $or ফিল্টার
         query_filter = {"$or": [{"file_name": {"$regex": re.escape(w), "$options": "i"}} for w in words]}
         
         # ১ম ডাটাবেজ থেকে ক্যান্ডিডেট মুভি আনা
@@ -107,7 +107,7 @@ async def get_close_match_from_db(query: str):
         # ইউজারের সার্চ কোয়েরি নরমাল করা হচ্ছে
         query_norm = query.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
         
-        # fuzz.ratio ব্যবহার করে স্ট্রিক্ট ম্যাচ (যাতে ছোট আংশিক নামের ফাইল বড় কোয়েরিকে ধোঁকা দিতে না পারে)
+        # fuzz.ratio ব্যবহার করে স্ট্রিক্ট ম্যাচ
         best_match_tuple = process.extractOne(query_norm, list(name_map.keys()), scorer=fuzz.ratio)
         
         if best_match_tuple:
@@ -131,7 +131,7 @@ def clean_search_query(query: str) -> str:
             return " ".join(cleaned_words)
     return query
 
-# --- প্রফেশনাল এআই প্রগ্রেসিভ সার্চ ইঞ্জিন (wrong year/language হ্যান্ডলার) ---
+# --- প্রফেশনাল এআই প্রগ্রেসিভ সার্চ ইঞ্জিন ---
 async def advanced_search_db(query: str):
     results = await search_db(query)
     if results:
@@ -171,9 +171,7 @@ async def main_handler(client: Client, message: Message):
     if message.chat.type == ChatType.PRIVATE:
         if text.startswith("/start"):
             
-            # --- ১. ফোর্স সাবস্ক্রিপশন চেক কোড সম্পূর্ণ মুছে ফেলা হয়েছে ---
-
-            # --- ২. সিকিউরিটি চেক এবং ফাইল ডেলিভারি ---
+            # --- সিকিউরিটি চেক এবং ফাইল ডেলিভারি ---
             if len(text.split()) > 1:
                 start_param = text.split()[1]
                 
@@ -202,7 +200,6 @@ async def main_handler(client: Client, message: Message):
                                 [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
                             ]
                             
-                            # এখানে 'chat_id=message.chat.id' টাইপোটি সফলভাবে ফিক্সড করা হয়েছে (ফাইল ডেলিভারি সচল)
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
@@ -243,30 +240,39 @@ async def main_handler(client: Client, message: Message):
                         await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
                     return
 
-            # সাধারণ স্টার্ট কমান্ড (ব্যানার এবং বাটন গ্রিড)
+            # সাধারণ স্টার্ট কমান্ড (নতুন আল্ট্রা-প্রিমিয়াম নিওন লেআউট)
             try:
                 await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
             except:
                 pass
 
             welcome_text = (
-                f"👋 **হ্যালো {message.from_user.first_name or 'ইউজার'}!**\n\n"
-                f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
-                f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।\n\n"
-                f"📢 **ব্যবহারের নিয়মাবলী:**\n"
-                f"১. মুভির নাম বানান সঠিক রেখে লিখে পাঠান।\n"
-                f"২. নিচের বাটনগুলো ব্যবহার করে আমাদের প্রফেশনাল গ্রুপ ও চ্যানেলে যুক্ত হতে পারেন।"
+                f"⚡️ **𝗖𝗧𝗚 𝗠𝗢𝗩𝗜𝗘 𝗦𝗘𝗔𝗥𝗖𝗛 𝗕𝗢𝗧** ⚡️\n\n"
+                f"👋 হ্যালো **{message.from_user.first_name or 'ইউজার'}**,\n"
+                f"মুভি খোঁজার সবচেয়ে দ্রুততম এবং প্রফেশনাল বটে আপনাকে স্বাগতম!\n\n"
+                f"🔍 **মুভি খোঁজার নিয়ম:**\n"
+                f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম (বানান সঠিক রেখে) লিখে মেসেজ পাঠান। যেমন: `KGF Chapter 2`\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔹 **বটের প্রধান সুবিধাসমূহ:**\n"
+                f"├─ ⚡️ আল্ট্রা হাই-স্পিড ডাউনলোড লিংক\n"
+                f"├─ 🗣 এআই চালিত অটো বানান সংশোধন ব্যবস্থা\n"
+                f"└─ 🍿 ৫টি প্রধান ভাষার হাজার হাজার মুভির কালেকশন\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"👇 নিচের বাটনগুলো ব্যবহার করে আমাদের সাথে যুক্ত থাকুন।"
             )
 
-            # ৪টি প্রিমিয়াম ইনলাইন বাটন গ্রিড
+            # নতুন ব্যালেন্সড ৩-স্তরের বাটন গ্রিড (Premium Layout)
             start_buttons = [
                 [
-                    InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
-                    InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
+                    InlineKeyboardButton("🍿 All Movies", url=config.CHANNEL_LINK_1),
+                    InlineKeyboardButton("💬 Movie Group", url=config.CHANNEL_LINK_1)
                 ],
                 [
-                    InlineKeyboardButton("👑 Premium Membership", callback_data="premium_info"),
-                    InlineKeyboardButton("💬 Movie Search Group", url=config.CHANNEL_LINK_1)
+                    InlineKeyboardButton("👑 Buy Premium Access (No Ads)", callback_data="premium_info")
+                ],
+                [
+                    InlineKeyboardButton("📢 Backup Channel", url=config.CHANNEL_LINK_2),
+                    InlineKeyboardButton("❓ How to Use", url=config.CHANNEL_LINK_2)
                 ]
             ]
             
@@ -297,7 +303,7 @@ async def main_handler(client: Client, message: Message):
         if text.startswith("/"):
             return
 
-        # --- সাধারণ সার্চ কুয়েরি (PM চ্যাটে - স্যানিটাইজার সহ) ---
+        # --- সাধারণ সার্চ কুয়েরি (PM চ্যাটে) ---
         query = text
         cleaned_text = text.lower().replace(".", " ").replace("-", " ").replace("_", " ")
         noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
@@ -317,7 +323,7 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_search_messages(message, results_msg))
             return
             
-        # ১.২ দ্বিতীয় ধাপ: ভুল বানান হলে সবার আগে এআই স্পেলিং চেকার (fuzzywuzzy) রান হবে
+        # ১.২ দ্বিতীয় ধাপ: এআই স্পেলিং চেকার
         await search_msg.edit_text("🤖 **ভুল বানান শনাক্ত হয়েছে! AI বানান সংশোধন করছে...**")
         await asyncio.sleep(1.5) 
         
@@ -338,7 +344,7 @@ async def main_handler(client: Client, message: Message):
                 asyncio.create_task(auto_delete_search_messages(message, results_msg))
                 return
 
-        # ১.৩ তৃতীয় ধাপ: যদি বানান সঠিক থাকে কিন্তু সাল বা ভাষা ভুল থাকে (Progressive Dropper)
+        # ১.৩ তৃতীয় ধাপ: প্রগ্রেসিভ সার্চ
         results, matched_query = await advanced_search_db(query)
         if results:
             await search_msg.delete()
@@ -346,7 +352,7 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_search_messages(message, results_msg))
             return
 
-        # ১.৪ quarto ধাপ: যদি কোনোভাবেই ফাইল না পাওয়া যায়
+        # ১.৪ চতুর্থ ধাপ: কোনোভাবেই ফাইল না পাওয়া গেলে
         req_buttons = [
             [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{query}")]
         ]
@@ -359,7 +365,7 @@ async def main_handler(client: Client, message: Message):
         return
 
     # ==========================================
-    # --- খ. গ্রুপ চ্যাট হ্যান্ডলার (Auto-Filter Group Mode with Full Pagination) ---
+    # --- খ. গ্রুপ চ্যাট হ্যান্ডলার (Auto-Filter Group Mode) ---
     # ==========================================
     elif message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
         if text.startswith("/"):
@@ -415,7 +421,7 @@ async def main_handler(client: Client, message: Message):
         asyncio.create_task(auto_delete_group_reply(not_found_msg))
 
 
-# সার্চ রেজাল্ট পেজ আকারে সাজানো এবং ল্যাঙ্গুয়েজ ফিল্টারিং বাটন জেনারেশন ফাংশন (PM চ্যাটের জন্য)
+# সার্চ রেজাল্ট পেজ আকারে সাজানো এবং ল্যাঙ্গুয়েজ ফিল্টারিং বাটন (PM চ্যাটের জন্য)
 async def send_search_results(message_or_query, results, query, page=0, lang="all"):
     lang = lang.lower()
     filtered_results = []
@@ -451,7 +457,6 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
     end_index = start_index + FILES_PER_PAGE
     current_page_results = filtered_results[start_index:end_index]
     
-    # ইউআরএল স্যানিটাইজার
     raw_url = config.WEB_URL.strip()
     if raw_url.lower().startswith("https://"):
         raw_url = raw_url[8:]
@@ -512,7 +517,7 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
         pass
 
 
-# --- গ্রুপের ভেতরেই পেজিনেশন বাটন জেনারেট করার ফাংশন (সেফটি সহ) ---
+# --- গ্রুপের ভেতরেই পেজিনেশন বাটন জেনারেট করার ফাংশন ---
 async def send_group_results(message_or_query, results, query, page=0, searcher_id=0):
     total_results = len(results)
     start_index = page * FILES_PER_PAGE
@@ -614,17 +619,21 @@ async def group_file_click_handler(client: Client, callback_query):
         url=f"https://t.me/{config.BOT_USERNAME}?start={file_db_id}"
     )
 
-# ৪. প্রিমিয়াম পপ-আপ অ্যালার্ট (এডিট বাটন মোড - ফিক্সড)
+# ৪. প্রিমিয়াম পপ-আপ অ্যালার্ট (সম্পূর্ণ নতুন এবং আকর্ষণীয় প্রফেশনাল ডিজাইন)
 @Client.on_callback_query(filters.regex(r"^premium_info$"))
 async def premium_info_click_handler(client: Client, callback_query):
     premium_text = (
-        "👑 **👑 CTG MOVIE PREMIUM BENEFITS** 👑\n\n"
-        "⚡️ **Ad-Free:** মিনি অ্যাপ ও কোনো বিজ্ঞাপন ছাড়াই সরাসরি চ্যাটে ফাইল!\n"
-        "🚀 **High-Speed:** আনলিমিটেড হাই-স্পিড ডিরেক্ট ক্যাশ ফাইল ডেলিভারি!\n"
-        "🤖 **VIP Support:** এডমিনের সরাসরি সাপোর্ট ও পার্সোনাল মুভি রিকোয়েস্ট সুবিধা!\n\n"
-        "💵 **মূল্য:** মাত্র ৫০ টাকা / মাস\n"
-        "📞 **বিকার/নগদ (সেন্ড মানি):** `018XXXXXXXX`\n\n"
-        "👉 সেন্ড মানি করার পর স্ক্রিনশট এবং ট্রানজিশন আইডি সহ এডমিনকে ইনবক্সে পাঠিয়ে দিন।"
+        "👑 **𝗖𝗧𝗚 𝗠𝗢𝗩𝗜𝗘 𝗣𝗥𝗘𝗠𝗜𝗨𝗠 𝗠𝗘𝗠𝗕𝗘𝗥𝗦𝗛𝗜𝗣** 👑\n\n"
+        "কোনো শর্টলিংক বা বিজ্ঞাপন ছাড়াই সরাসরি ফাইল এবং আল্ট্রা-স্পিড ডাউনলোড সুবিধা পেতে আজই ভিআইপি মেম্বারশিপ গ্রহণ করুন!\n\n"
+        "✨ **মেম্বারদের বিশেষ সুবিধাসমূহ:**\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🚀 **Ad-Free Experience:** ওয়ান-ক্লিক ডিরেক্ট ফাইল ডাউনলোড (কোনো মিনি অ্যাপ আসবে না)!\n"
+        "⚡️ **Super Speed:** সরাসরি ক্যাশ ফাইল ডেলিভারি!\n"
+        "🤝 **VIP Request Support:** এডমিনের সরাসরি সাপোর্ট ও ফাস্ট ট্র্যাক রিকোয়েস্ট সুবিধা!\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "💵 **মূল্য:** মাত্র ৫০ টাকা / প্রতি মাস\n"
+        "📞 **বিকাশ / নগদ (Send Money):** `018XXXXXXXX`\n\n"
+        "👉 সেন্ড মানি করার পর স্ক্রিনশট এবং ট্রানজিশন আইডি সহ বটের মেইন এডমিনকে ইনবক্সে পাঠিয়ে দিন।"
     )
     back_button = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="start_back")]]
     try:
@@ -633,25 +642,34 @@ async def premium_info_click_handler(client: Client, callback_query):
         pass
     await callback_query.answer()
 
-# ৪.১ হোম মেনুতে ফিরে যাওয়ার ব্যাক বাটন হ্যান্ডলার (নতুন)
+# ৪.১ হোম মেনুতে ফিরে যাওয়ার ব্যাক বাটন হ্যান্ডলার (নতুন সংশোধিত ডিজাইন)
 @Client.on_callback_query(filters.regex(r"^start_back$"))
 async def start_back_handler(client: Client, callback_query):
     welcome_text = (
-        f"👋 **হ্যালো {callback_query.from_user.first_name or 'ইউজার'}!**\n\n"
-        f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
-        f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।\n\n"
-        f"📢 **ব্যবহারের নিয়মাবলী:**\n"
-        f"১. মুভির নাম বানান সঠিক রেখে লিখে পাঠান।\n"
-        f"২. নিচের বাটনগুলো ব্যবহার করে আমাদের প্রফেশনাল গ্রুপ ও চ্যানেলে যুক্ত হতে পারেন।"
+        f"⚡️ **𝗖𝗧𝗚 𝗠𝗢𝗩𝗜𝗘 𝗦𝗘𝗔𝗥𝗖𝗛 𝗕𝗢𝗧** ⚡️\n\n"
+        f"👋 হ্যালো **{callback_query.from_user.first_name or 'ইউজার'}**,\n"
+        f"মুভি খোঁজার সবচেয়ে দ্রুততম এবং প্রফেশনাল বটে আপনাকে স্বাগতম!\n\n"
+        f"🔍 **মুভি খোঁজার নিয়ম:**\n"
+        f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম (বানান সঠিক রেখে) লিখে মেসেজ পাঠান। যেমন: `KGF Chapter 2`\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔹 **বটের প্রধান সুবিধাসমূহ:**\n"
+        f"├─ ⚡️ আল্ট্রা হাই-স্পিড ডাউনলোড লিংক\n"
+        f"├─ 🗣 এআই চালিত অটো বানান সংশোধন ব্যবস্থা\n"
+        f"└─ 🍿 ৫টি প্রধান ভাষার হাজার হাজার মুভির কালেকশন\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👇 নিচের বাটনগুলো ব্যবহার করে আমাদের সাথে যুক্ত থাকুন।"
     )
     start_buttons = [
         [
-            InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
-            InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
+            InlineKeyboardButton("🍿 All Movies", url=config.CHANNEL_LINK_1),
+            InlineKeyboardButton("💬 Movie Group", url=config.CHANNEL_LINK_1)
         ],
         [
-            InlineKeyboardButton("👑 Premium Membership", callback_data="premium_info"),
-            InlineKeyboardButton("💬 Movie Search Group", url=config.CHANNEL_LINK_1)
+            InlineKeyboardButton("👑 Buy Premium Access (No Ads)", callback_data="premium_info")
+        ],
+        [
+            InlineKeyboardButton("📢 Backup Channel", url=config.CHANNEL_LINK_2),
+            InlineKeyboardButton("❓ How to Use", url=config.CHANNEL_LINK_2)
         ]
     ]
     try:
@@ -712,7 +730,7 @@ async def group_page_click_handler(client: Client, callback_query):
         await send_group_results(callback_query, results, matched_query, page=target_page, searcher_id=searcher_id)
     await callback_query.answer()
 
-# ৮. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (Fuzzy "Did You Mean" Auto-Search - গ্রুপ চ্যাটের জন্য - ইউজার লকড)
+# ৮. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (গ্রুপ চ্যাটের জন্য - ইউজার লকড)
 @Client.on_callback_query(filters.regex(r"^gtsearch\|"))
 async def gtsearch_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
@@ -730,7 +748,6 @@ async def gtsearch_click_handler(client: Client, callback_query):
     await callback_query.message.delete()
     results, matched_query = await advanced_search_db(query)
     if results:
-        # গ্রুপ রেজাল্ট পাঠানো
         group_reply = await send_group_results(callback_query, results, matched_query, page=0, searcher_id=searcher_id)
         asyncio.create_task(auto_delete_group_reply(group_reply))
     else:
