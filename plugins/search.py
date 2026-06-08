@@ -67,7 +67,7 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- র্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
+# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
 async def get_close_match_from_db(query: str):
     try:
         from database import files_col1, files_col2
@@ -176,7 +176,7 @@ async def main_handler(client: Client, message: Message):
             if len(text.split()) > 1:
                 start_param = text.split()[1]
                 
-                # ক. ইউজার যদি বিজ্ঞাপন দেখে আসল চাবি 'get_' সহ ফিরে আসে
+                # ক. ইউজার যদি বিজ্ঞাপন দেখে বা প্রিমিয়াম প্যানেল থেকে ওয়ান-ক্লিক ফাইলের জন্য ফিরে আসে
                 if start_param.startswith("get_"):
                     file_db_id = start_param.replace("get_", "")
                     file_data = await get_file_by_db_id(file_db_id)
@@ -187,44 +187,19 @@ async def main_handler(client: Client, message: Message):
                             cleaned_name = clean_movie_title(raw_name)
                             file_size = round(file_data["file_size"] / (1024 * 1024), 2)
                             
-                            is_vip = await is_premium_user(user_id)
+                            caption_text = (
+                                f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
+                                f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
+                                f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
+                                f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
+                                f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
+                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                            )
                             
-                            if is_vip:
-                                # প্রিমিয়াম ইউজারের জন্য স্ট্রিমিং প্লেয়ার বাটন জেনারেট করা হচ্ছে
-                                raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
-                                web_app_stream_url = f"https://{raw_url}/play?id={file_db_id}"
-                                
-                                caption_text = (
-                                    f"👑 **ভিআইপি ডিরেক্ট ডেলিভারি (No Ads)** 👑\n\n"
-                                    f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
-                                    f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
-                                    f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
-                                    f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
-                                    f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                    f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
-                                )
-                                
-                                promo_buttons = [
-                                    [InlineKeyboardButton("🍿 Watch Online (VIP Player) ⚡️", web_app=WebAppInfo(url=web_app_stream_url))],
-                                    [
-                                        InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
-                                        InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
-                                    ]
-                                ]
-                            else:
-                                caption_text = (
-                                    f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
-                                    f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
-                                    f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
-                                    f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
-                                    f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                    f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
-                                )
-                                
-                                promo_buttons = [
-                                    [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
-                                    [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
-                                ]
+                            promo_buttons = [
+                                [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
+                                [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
+                            ]
                             
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
@@ -246,65 +221,24 @@ async def main_handler(client: Client, message: Message):
                     file_data = await get_file_by_db_id(file_db_id)
                     
                     if file_data:
-                        # প্রিমিয়াম চেক করা হচ্ছে
-                        is_vip = await is_premium_user(user_id)
+                        file_name = clean_movie_title(file_data["file_name"])
+                        raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
                         
-                        if is_vip:
-                            # প্রিমিয়াম ইউজারের জন্য সরাসরি ওয়ান-ক্লিক ফাইল ডেলিভারি + স্ট্রিমিং বাটন
-                            try:
-                                raw_name = file_data["file_name"]
-                                cleaned_name = clean_movie_title(raw_name)
-                                file_size = round(file_data["file_size"] / (1024 * 1024), 2)
-                                
-                                raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
-                                web_app_stream_url = f"https://{raw_url}/play?id={file_db_id}"
-                                
-                                caption_text = (
-                                    f"👑 **ভিআইপি ডিরেক্ট ডেলিভারি (No Ads)** 👑\n\n"
-                                    f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
-                                    f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
-                                    f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
-                                    f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
-                                    f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                    f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
-                                )
-                                
-                                promo_buttons = [
-                                    [InlineKeyboardButton("🍿 Watch Online (VIP Player) ⚡️", web_app=WebAppInfo(url=web_app_stream_url))],
-                                    [
-                                        InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
-                                        InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
-                                    ]
-                                ]
-                                
-                                sent_file = await client.send_cached_media(
-                                    chat_id=message.chat.id,
-                                    file_id=file_data["file_id"],
-                                    caption=caption_text,
-                                    reply_markup=InlineKeyboardMarkup(promo_buttons)
-                                )
-                                asyncio.create_task(auto_delete_file(sent_file))
-                                asyncio.create_task(auto_delete_search_messages(message, sent_file))
-                            except Exception as e:
-                                await message.reply_text(f"❌ দুঃখিত, ফাইলটি পাঠানো যাচ্ছে না: {str(e)}")
-                        else:
-                            # সাধারণ ফ্রি ইউজারের জন্য আগের মিনি অ্যাপের বাটন দেখাবে
-                            file_name = clean_movie_title(file_data["file_name"])
-                            raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
-                            web_app_url = f"https://{raw_url}/download?id={file_db_id}"
-                            
-                            buttons = [
-                                [InlineKeyboardButton(
-                                    text="🍿 Open Web App to Download",
-                                    web_app=WebAppInfo(url=web_app_url)
-                                )]
-                            ]
-                            app_msg = await message.reply_text(
-                                f"🎬 **ফাইলের নাম:** `{file_name}`\n\n"
-                                f"👉 ফাইলটি ডাউনলোড করার জন্য নিচের বাটনে ক্লিক করে বিজ্ঞাপনটি আনলক করুন।",
-                                reply_markup=InlineKeyboardMarkup(buttons)
-                            )
-                            asyncio.create_task(auto_delete_search_messages(message, app_msg))
+                        # এখানেও user_id সহ ম্যাপ করা হলো (গ্রুপ থেকে এলেও যাতে প্রিমিয়াম কাজ করে)
+                        web_app_url = f"https://{raw_url}/download?id={file_db_id}&user_id={user_id}"
+                        
+                        buttons = [
+                            [InlineKeyboardButton(
+                                text="🍿 Open Web App to Download",
+                                web_app=WebAppInfo(url=web_app_url)
+                            )]
+                        ]
+                        app_msg = await message.reply_text(
+                            f"🎬 **ফাইলের নাম:** `{file_name}`\n\n"
+                            f"👉 ফাইলটি ডাউনলোড করার জন্য নিচের বাটনে ক্লিক করে বিজ্ঞাপনটি আনলক করুন।",
+                            reply_markup=InlineKeyboardMarkup(buttons)
+                        )
+                        asyncio.create_task(auto_delete_search_messages(message, app_msg))
                     else:
                         await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
                     return
@@ -534,9 +468,8 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
     if raw_url.endswith("/"):
         raw_url = raw_url[:-1]
     
-    # প্রিমিয়াম চেক করার জন্য ইউজার আইডি বের করা হচ্ছে
+    # প্রিমিয়াম ভেরিফিকেশন চেক করার জন্য ইউজার আইডি বের করা হচ্ছে
     user_id = message_or_query.from_user.id if isinstance(message_or_query, Message) else message_or_query.from_user.id
-    is_vip = await is_premium_user(user_id)
 
     buttons = []
     for file in current_page_results:
@@ -546,20 +479,12 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
         
-        if is_vip:
-            # প্রিমিয়াম ইউজারদের জন্য সরাসরি ওয়ান-ক্লিক ডিপলিংক বাটন (বিজ্ঞাপন ছাড়া ফাইল ডেলিভারি)
-            vip_direct_url = f"https://t.me/{config.BOT_USERNAME}?start=get_{db_id}"
-            buttons.append([InlineKeyboardButton(
-                text=f"🎬 {file_name} [{file_size} MB]",
-                url=vip_direct_url
-            )])
-        else:
-            # সাধারণ ফ্রি ইউজারদের জন্য মিনি অ্যাপ বাটন
-            web_app_url = f"https://{raw_url}/download?id={db_id}"
-            buttons.append([InlineKeyboardButton(
-                text=f"🎬 {file_name} [{file_size} MB]",
-                web_app=WebAppInfo(url=web_app_url)
-            )])
+        # ইউজার ফ্রি বা প্রিমিয়াম—উভয়ের জন্যই একই ইউনিফর্ম বাটন ওপেন হবে, তবে ইউজার আইডি পাস হবে
+        web_app_url = f"https://{raw_url}/download?id={db_id}&user_id={user_id}"
+        buttons.append([InlineKeyboardButton(
+            text=f"🎬 {file_name} [{file_size} MB]",
+            web_app=WebAppInfo(url=web_app_url)
+        )])
 
     nav_buttons = []
     if page > 0:
