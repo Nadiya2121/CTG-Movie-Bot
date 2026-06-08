@@ -67,7 +67,7 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
+# --- র্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
 async def get_close_match_from_db(query: str):
     try:
         from database import files_col1, files_col2
@@ -187,19 +187,44 @@ async def main_handler(client: Client, message: Message):
                             cleaned_name = clean_movie_title(raw_name)
                             file_size = round(file_data["file_size"] / (1024 * 1024), 2)
                             
-                            caption_text = (
-                                f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
-                                f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
-                                f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
-                                f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
-                                f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
-                            )
+                            is_vip = await is_premium_user(user_id)
                             
-                            promo_buttons = [
-                                [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
-                                [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
-                            ]
+                            if is_vip:
+                                # প্রিমিয়াম ইউজারের জন্য স্ট্রিমিং প্লেয়ার বাটন জেনারেট করা হচ্ছে
+                                raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
+                                web_app_stream_url = f"https://{raw_url}/play?id={file_db_id}"
+                                
+                                caption_text = (
+                                    f"👑 **ভিআইপি ডিরেক্ট ডেলিভারি (No Ads)** 👑\n\n"
+                                    f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
+                                    f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
+                                    f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
+                                    f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
+                                    f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
+                                    f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                )
+                                
+                                promo_buttons = [
+                                    [InlineKeyboardButton("🍿 Watch Online (VIP Player) ⚡️", web_app=WebAppInfo(url=web_app_stream_url))],
+                                    [
+                                        InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
+                                        InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
+                                    ]
+                                ]
+                            else:
+                                caption_text = (
+                                    f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
+                                    f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
+                                    f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
+                                    f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
+                                    f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
+                                    f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                )
+                                
+                                promo_buttons = [
+                                    [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
+                                    [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
+                                ]
                             
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
@@ -225,11 +250,14 @@ async def main_handler(client: Client, message: Message):
                         is_vip = await is_premium_user(user_id)
                         
                         if is_vip:
-                            # প্রিমিয়াম ইউজারের জন্য সরাসরি ওয়ান-ক্লিক ফাইল ডেলিভারি (বিজ্ঞাপন বাইপাস)
+                            # প্রিমিয়াম ইউজারের জন্য সরাসরি ওয়ান-ক্লিক ফাইল ডেলিভারি + স্ট্রিমিং বাটন
                             try:
                                 raw_name = file_data["file_name"]
                                 cleaned_name = clean_movie_title(raw_name)
                                 file_size = round(file_data["file_size"] / (1024 * 1024), 2)
+                                
+                                raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
+                                web_app_stream_url = f"https://{raw_url}/play?id={file_db_id}"
                                 
                                 caption_text = (
                                     f"👑 **ভিআইপি ডিরেক্ট ডেলিভারি (No Ads)** 👑\n\n"
@@ -242,8 +270,11 @@ async def main_handler(client: Client, message: Message):
                                 )
                                 
                                 promo_buttons = [
-                                    [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
-                                    [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
+                                    [InlineKeyboardButton("🍿 Watch Online (VIP Player) ⚡️", web_app=WebAppInfo(url=web_app_stream_url))],
+                                    [
+                                        InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
+                                        InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
+                                    ]
                                 ]
                                 
                                 sent_file = await client.send_cached_media(
