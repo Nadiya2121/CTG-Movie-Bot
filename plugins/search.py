@@ -662,14 +662,14 @@ async def start_back_handler(client: Client, callback_query):
     start_buttons = [
         [
             InlineKeyboardButton("🍿 All Movies", url=config.CHANNEL_LINK_1),
-            InlineKeyboardButton("💬 Movie Group", url=config.CHANNEL_LINK_1)
+            InlineKeyboardButton("💬 Movie Group", url=config.GROUP_LINK)
         ],
         [
             InlineKeyboardButton("👑 Buy Premium Access (No Ads)", callback_data="premium_info")
         ],
         [
             InlineKeyboardButton("📢 Backup Channel", url=config.CHANNEL_LINK_2),
-            InlineKeyboardButton("❓ How to Use", url=config.CHANNEL_LINK_2)
+            InlineKeyboardButton("❓ How to Use", url=config.HOW_TO_USE_LINK)
         ]
     ]
     try:
@@ -690,7 +690,7 @@ async def tsearch_click_handler(client: Client, callback_query):
     else:
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
 
-#6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার
+# ৬. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^req\|"))
 async def request_movie_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
@@ -751,4 +751,4 @@ async def gtsearch_click_handler(client: Client, callback_query):
         group_reply = await send_group_results(callback_query, results, matched_query, page=0, searcher_id=searcher_id)
         asyncio.create_task(auto_delete_group_reply(group_reply))
     else:
-        await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True
+        await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
