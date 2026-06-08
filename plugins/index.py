@@ -9,6 +9,9 @@ from database import save_file, get_active_files_collection
 
 INDEX_STATES = {}
 
+# মাল্টিপল এডমিন ফিল্টার (config.ADMINS তালিকা চেক করবে)
+is_admin = filters.create(lambda _, __, message: message.from_user and message.from_user.id in config.ADMINS)
+
 # রিকোয়েস্টকারী ইউজারকে মুভি আপলোড হওয়া মাত্র নোটিফাই করার অটোমেটিক টাস্ক (সেফটি সহ)
 async def check_and_notify_requests(client: Client, file_name: str, file_db_id: str):
     if not file_name or not isinstance(file_name, str):
@@ -75,7 +78,7 @@ async def auto_index(client: Client, message: Message):
 
 
 # ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch Method - সেফটি সহ)
-@Client.on_message(filters.command("index") & filters.user(config.ADMIN_ID) & filters.private)
+@Client.on_message(filters.command("index") & is_admin & filters.private)
 async def index_start_cmd(client: Client, message: Message):
     INDEX_STATES[message.from_user.id] = True
     instructions = (
@@ -87,7 +90,7 @@ async def index_start_cmd(client: Client, message: Message):
     )
     await message.reply_text(instructions)
 
-@Client.on_message(filters.forwarded & filters.private & filters.user(config.ADMIN_ID))
+@Client.on_message(filters.forwarded & filters.private & is_admin)
 async def process_index_forward(client: Client, message: Message):
     user_id = message.from_user.id
     if not INDEX_STATES.get(user_id):
