@@ -18,7 +18,7 @@ except RuntimeError:
 from pyrogram import Client
 import config
 
-# ১. আল্ট্রা-প্রিমিয়াম নিয়ন আরজিবি মিনি অ্যাপ ডাউনলোড টেমপ্লেট
+# ১. সাধারণ (Free) ইউজারদের জন্য মিনি অ্যাপ ডাউনলোড টেমপ্লেট
 HTML_TEMPLATE = Template("""
 <!DOCTYPE html>
 <html lang="en">
@@ -293,7 +293,176 @@ HTML_TEMPLATE = Template("""
 </html>
 """)
 
-# ২. প্রিমিয়াম স্ট্রিমিং প্লেয়ার ওয়েব পেজ টেমপ্লেট (HTML_STREAM_TEMPLATE)
+# ২. প্রিমিয়াম (VIP) ইউজারদের জন্য নিওন গ্রিন স্পেশাল কনট্রোল ড্যাশবোর্ড (অ্যাড ছাড়া ২টি অপশন থাকবে)
+HTML_VIP_TEMPLATE = Template("""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIP Access Control Panel</title>
+    <!-- টেলিগ্রামের অফিশিয়াল ওয়েব অ্যাপ স্ক্রিপ্ট -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            background-color: #0b0c10;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            text-align: center;
+            padding: 15px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 95vh;
+        }
+        
+        /* আরজিবি নিওন পালসিং বর্ডার অ্যানিমেশন */
+        @keyframes vipGlow {
+            0% { border-color: rgba(0, 255, 136, 0.4); box-shadow: 0 0 15px rgba(0, 255, 136, 0.2); }
+            50% { border-color: rgba(0, 240, 255, 0.4); box-shadow: 0 0 15px rgba(0, 240, 255, 0.2); }
+            100% { border-color: rgba(0, 255, 136, 0.4); box-shadow: 0 0 15px rgba(0, 255, 136, 0.2); }
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: rgba(30, 30, 38, 0.7);
+            padding: 30px 20px;
+            border-radius: 24px;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 255, 136, 0.5);
+            animation: vipGlow 6s infinite ease-in-out;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        }
+        
+        .vip-badge {
+            display: inline-block;
+            background: rgba(0, 255, 136, 0.1);
+            color: #00ff88;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 800;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+        }
+        
+        h2 { 
+            color: #00ff88; 
+            margin: 0 0 15px 0; 
+            font-size: 24px; 
+            font-weight: 800;
+            text-transform: uppercase;
+            text-shadow: 0 0 12px rgba(0, 255, 136, 0.3);
+        }
+        
+        .info-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 25px;
+            text-align: left;
+        }
+        .info-title {
+            font-weight: bold;
+            color: #00f0ff;
+            word-break: break-all;
+            margin-bottom: 8px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .info-size {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 16px 0;
+            margin: 15px 0;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .btn-stream {
+            background: linear-gradient(135deg, #00f0ff, #0072ff);
+            box-shadow: 0 4px 15px rgba(0, 240, 255, 0.4);
+        }
+        .btn-stream:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 240, 255, 0.6);
+        }
+        .btn-download {
+            background: linear-gradient(135deg, #00ff88, #009951);
+            color: #000000;
+            font-weight: 800;
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+        }
+        .btn-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 255, 136, 0.6);
+        }
+        .btn-close {
+            background: #1f2937;
+            border: 1px solid #374151;
+            color: #9ca3af;
+        }
+        .btn-close:hover {
+            background: #374151;
+            color: white;
+        }
+    </style>
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        function playOnline() {
+            window.location.href = "/play?id=$file_db_id";
+        }
+
+        function getMovie() {
+            tg.openTelegramLink("https://t.me/$bot_username?start=get_$file_db_id");
+            setTimeout(function() {
+                tg.close();
+            }, 500);
+        }
+        
+        function closeApp() {
+            tg.close();
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="vip-badge">👑 VIP Premium Active</div>
+        <h2>CTG VIP MOVIE PANEL</h2>
+        
+        <div class="info-card">
+            <div class="info-title">🎬 $file_name</div>
+            <div class="info-size">💾 Size: <b>$file_size MB</b></div>
+        </div>
+        
+        <button class="btn btn-stream" onclick="playOnline()">🍿 Watch Online / Stream</button>
+        <button class="btn btn-download" onclick="getMovie()">⚡️ Get File in Telegram</button>
+        <button class="btn btn-close" onclick="closeApp()">🛑 Close Panel</button>
+    </div>
+</body>
+</html>
+""")
+
+# ৩. প্রিমিয়াম স্ট্রিমিং প্লেয়ার ওয়েব পেজ টেমপ্লেট
 HTML_STREAM_TEMPLATE = Template("""
 <!DOCTYPE html>
 <html lang="en">
@@ -440,39 +609,81 @@ class DummyWebServer(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed_url = urlparse(self.path)
         
-        # ১. মিনি অ্যাপ ডাউনলোড বাটন পেইজ
+        # ১. মিনি অ্যাপ ডাউনলোড বাটন পেইজ (প্রিমিয়াম/ফ্রি কন্ডিশনাল লজিক সহ)
         if parsed_url.path == "/download":
             query_params = parse_qs(parsed_url.query)
             file_db_id = query_params.get("id", [""])[0]
+            user_id_str = query_params.get("user_id", [""])[0]
             
-            base_ad = random.choice(config.DIRECT_AD_LINKS)
-            rand_id = random.randint(100000, 999999)
-            rand_click = random.randint(1000000, 9999999)
+            user_id = 0
+            if user_id_str.isdigit():
+                user_id = int(user_id_str)
+                
+            # প্রিমিয়াম ভেরিফিকেশন চেক
+            is_vip = False
+            if app.loop and app.loop.is_running() and user_id > 0:
+                try:
+                    from database import is_premium_user
+                    future = asyncio.run_coroutine_threadsafe(is_premium_user(user_id), app.loop)
+                    is_vip = future.result(timeout=2)
+                except Exception as e:
+                    print(f"Failed to verify VIP status in server: {e}")
             
-            if "?" in base_ad:
-                ad_link = f"{base_ad}&click_id={rand_click}&sub_id={rand_id}"
-            else:
-                ad_link = f"{base_ad}?click_id={rand_click}&sub_id={rand_id}"
-            
-            total_files, total_users, used_mb, free_mb, free_percent = 0, 0, 0.0, 512.0, 100.0
+            # ডাটাবেজ থেকে মুভির রিয়েল মেটাডেটা সংগ্রহ
+            file_data = None
             if app.loop and app.loop.is_running():
                 try:
-                    from database import get_detailed_stats
-                    future = asyncio.run_coroutine_threadsafe(get_detailed_stats(), app.loop)
-                    total_files, total_users, used_mb, free_mb, free_percent = future.result(timeout=2)
+                    from database import get_file_by_db_id
+                    future = asyncio.run_coroutine_threadsafe(get_file_by_db_id(file_db_id), app.loop)
+                    file_data = future.result(timeout=2)
                 except Exception as e:
-                    print(f"Failed to fetch live stats: {e}")
+                    print(f"Failed to fetch file details: {e}")
             
-            response_html = HTML_TEMPLATE.safe_substitute(
-                file_db_id=file_db_id,
-                bot_username=config.BOT_USERNAME,
-                ad_link=ad_link,
-                total_files=f"{total_files:,}",
-                total_users=f"{total_users:,}",
-                used_mb=used_mb,
-                free_mb=free_mb,
-                free_percent=free_percent
-            )
+            if not file_data:
+                self.send_error(404, "File Not Found")
+                return
+                
+            file_name = file_data.get("file_name", "Movie File")
+            file_size = round(file_data["file_size"] / (1024 * 1024), 2)
+            
+            # ইউজার প্রিমিয়াম হলে সরাসরি অ্যাড ছাড়া ২-বাটন প্যানেল দেখাবে
+            if is_vip:
+                response_html = HTML_VIP_TEMPLATE.safe_substitute(
+                    file_db_id=file_db_id,
+                    bot_username=config.BOT_USERNAME,
+                    file_name=file_name,
+                    file_size=file_size
+                )
+            # ইউজার সাধারণ বা ফ্রি হলে পূর্বের নিয়মে লোডার + অ্যাড স্ক্রিন দেখাবে
+            else:
+                base_ad = random.choice(config.DIRECT_AD_LINKS)
+                rand_id = random.randint(100000, 999999)
+                rand_click = random.randint(1000000, 9999999)
+                
+                if "?" in base_ad:
+                    ad_link = f"{base_ad}&click_id={rand_click}&sub_id={rand_id}"
+                else:
+                    ad_link = f"{base_ad}?click_id={rand_click}&sub_id={rand_id}"
+                
+                total_files, total_users, used_mb, free_mb, free_percent = 0, 0, 0.0, 512.0, 100.0
+                if app.loop and app.loop.is_running():
+                    try:
+                        from database import get_detailed_stats
+                        future = asyncio.run_coroutine_threadsafe(get_detailed_stats(), app.loop)
+                        total_files, total_users, used_mb, free_mb, free_percent = future.result(timeout=2)
+                    except Exception as e:
+                        print(f"Failed to fetch live stats: {e}")
+                
+                response_html = HTML_TEMPLATE.safe_substitute(
+                    file_db_id=file_db_id,
+                    bot_username=config.BOT_USERNAME,
+                    ad_link=ad_link,
+                    total_files=f"{total_files:,}",
+                    total_users=f"{total_users:,}",
+                    used_mb=used_mb,
+                    free_mb=free_mb,
+                    free_percent=free_percent
+                )
             
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
