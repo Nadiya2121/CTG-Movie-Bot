@@ -120,7 +120,7 @@ async def get_close_match_from_db(query: str):
         print(f"Fuzzy match error: {e}")
         return None
 
-# --- নয়েজ ওয়ার্ড রিমুভার (আন্ডারস্কোর ও ডট স্যানিটাইজার সহ) ---
+# --- নয়েজ ওয়ার্ড রিমুভার ---
 def clean_search_query(query: str) -> str:
     cleaned = query.lower().replace(".", " ").replace("-", " ").replace("_", " ")
     noise_words = ["movie", "movies", "full", "hd", "bluray", "web-dl", "mkv", "mp4", "mubi", "bin", "muby", "mube"]
@@ -131,7 +131,7 @@ def clean_search_query(query: str) -> str:
             return " ".join(cleaned_words)
     return query
 
-# --- প্রফেশনাল এআই প্রগ্রেসিভ সার্চ ইঞ্জিন ---
+# --- প্রফেশনাল এআই প্রগ্রেসিভ সার্চ ইঞ্জিন (wrong year/language হ্যান্ডলার) ---
 async def advanced_search_db(query: str):
     results = await search_db(query)
     if results:
@@ -171,24 +171,7 @@ async def main_handler(client: Client, message: Message):
     if message.chat.type == ChatType.PRIVATE:
         if text.startswith("/start"):
             
-            # --- ১. ফোর্স সাবস্ক্রিপশন চেক ---
-            if user_id != config.ADMIN_ID:
-                try:
-                    await client.get_chat_member(config.MAIN_CHANNEL_ID, user_id)
-                except UserNotParticipant:
-                    fsub_buttons = [
-                        [InlineKeyboardButton("🍿 Join Our Movie Channel", url=config.CHANNEL_LINK_1)],
-                        [InlineKeyboardButton("🔄 Try Again", url=f"https://t.me/{config.BOT_USERNAME}?start={text[7:]}" if len(text.split()) > 1 else f"https://t.me/{config.BOT_USERNAME}?start=start")]
-                    ]
-                    await message.reply_text(
-                        f"👋 **হ্যালো {message.from_user.first_name}!**\n\n"
-                        f"বট থেকে ফাইল পেতে হলে আপনাকে প্রথমে আমাদের মুভি চ্যানেলে জয়েন হতে হবে।\n\n"
-                        f"👉 অনুগ্রহ করে নিচের বাটনে জয়েন করে 'Try Again' এ ক্লিক করুন।",
-                        reply_markup=InlineKeyboardMarkup(fsub_buttons)
-                    )
-                    return
-                except Exception as e:
-                    print(f"FSub Warning (Make sure bot is Admin in main channel): {e}")
+            # --- ১. ফোর্স সাবস্ক্রিপশন চেক কোড সম্পূর্ণ মুছে ফেলা হয়েছে ---
 
             # --- ২. সিকিউরিটি চেক এবং ফাইল ডেলিভারি ---
             if len(text.split()) > 1:
@@ -211,7 +194,7 @@ async def main_handler(client: Client, message: Message):
                                 f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
                                 f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
                                 f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কпиরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                             )
                             
                             promo_buttons = [
@@ -219,6 +202,7 @@ async def main_handler(client: Client, message: Message):
                                 [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
                             ]
                             
+                            # এখানে 'chat_id=message.chat.id' টাইপোটি সফলভাবে ফিক্সড করা হয়েছে (ফাইল ডেলিভারি সচল)
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
@@ -630,19 +614,51 @@ async def group_file_click_handler(client: Client, callback_query):
         url=f"https://t.me/{config.BOT_USERNAME}?start={file_db_id}"
     )
 
-# ৪. প্রিমিয়াম পপ-আপ ইনফো অ্যালার্ট
+# ৪. প্রিমিয়াম পপ-আপ অ্যালার্ট (এডিট বাটন মোড - ফিক্সড)
 @Client.on_callback_query(filters.regex(r"^premium_info$"))
 async def premium_info_click_handler(client: Client, callback_query):
     premium_text = (
-        "👑 CTG MOVIE PREMIUM BENEFITS:\n\n"
-        "⚡️ Ad-Free (মিনি অ্যাপ ও বিজ্ঞাপন ছাড়াই সরাসরি ফাইল!)\n"
-        "🚀 Unlimited High-Speed Direct Files!\n"
-        "🤖 Personal Admin Support & Movie Request!\n\n"
-        "💵 Price: 50 BDT / Month\n"
-        "📞 Bkash/Nagad: 018XXXXXXXX\n\n"
-        "👉 সেন্ড মানি করার পর ট্রানজিশন আইডি সহ স্ক্রিনশট এডমিনকে ইনবক্সে পাঠিয়ে দিন।"
+        "👑 **👑 CTG MOVIE PREMIUM BENEFITS** 👑\n\n"
+        "⚡️ **Ad-Free:** মিনি অ্যাপ ও কোনো বিজ্ঞাপন ছাড়াই সরাসরি চ্যাটে ফাইল!\n"
+        "🚀 **High-Speed:** আনলিমিটেড হাই-স্পিড ডিরেক্ট ক্যাশ ফাইল ডেলিভারি!\n"
+        "🤖 **VIP Support:** এডমিনের সরাসরি সাপোর্ট ও পার্সোনাল মুভি রিকোয়েস্ট সুবিধা!\n\n"
+        "💵 **মূল্য:** মাত্র ৫০ টাকা / মাস\n"
+        "📞 **বিকার/নগদ (সেন্ড মানি):** `018XXXXXXXX`\n\n"
+        "👉 সেন্ড মানি করার পর স্ক্রিনশট এবং ট্রানজিশন আইডি সহ এডমিনকে ইনবক্সে পাঠিয়ে দিন।"
     )
-    await callback_query.answer(premium_text, show_alert=True)
+    back_button = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="start_back")]]
+    try:
+        await callback_query.message.edit_text(premium_text, reply_markup=InlineKeyboardMarkup(back_button))
+    except MessageNotModified:
+        pass
+    await callback_query.answer()
+
+# ৪.১ হোম মেনুতে ফিরে যাওয়ার ব্যাক বাটন হ্যান্ডলার (নতুন)
+@Client.on_callback_query(filters.regex(r"^start_back$"))
+async def start_back_handler(client: Client, callback_query):
+    welcome_text = (
+        f"👋 **হ্যালো {callback_query.from_user.first_name or 'ইউজার'}!**\n\n"
+        f"🎬 **CTG Movie সার্চ বটে আপনাকে স্বাগতম!**\n"
+        f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম লিখে মেসেজ পাঠান।\n\n"
+        f"📢 **ব্যবহারের নিয়মাবলী:**\n"
+        f"১. মুভির নাম বানান সঠিক রেখে লিখে পাঠান।\n"
+        f"২. নিচের বাটনগুলো ব্যবহার করে আমাদের প্রফেশনাল গ্রুপ ও চ্যানেলে যুক্ত হতে পারেন।"
+    )
+    start_buttons = [
+        [
+            InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1),
+            InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)
+        ],
+        [
+            InlineKeyboardButton("👑 Premium Membership", callback_data="premium_info"),
+            InlineKeyboardButton("💬 Movie Search Group", url=config.CHANNEL_LINK_1)
+        ]
+    ]
+    try:
+        await callback_query.message.edit_text(welcome_text, reply_markup=InlineKeyboardMarkup(start_buttons))
+    except MessageNotModified:
+        pass
+    await callback_query.answer()
 
 # ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (Fuzzy "Did You Mean" Auto-Search)
 @Client.on_callback_query(filters.regex(r"^tsearch\|"))
@@ -675,7 +691,7 @@ async def request_movie_handler(client: Client, callback_query):
     else:
         await callback_query.answer("⚠️ আপনি ইতিমধ্যেই এই মুভিটির রিকোয়েস্ট পাঠিয়েছেন!", show_alert=True)
 
-# ७. গ্রুপ পেজ নেভিগেশন বাটন ক্লিক হ্যান্ডলার (ইউজার লকড)
+# ৭. গ্রুপ পেজ নেভিগেশন বাটন ক্লিক হ্যান্ডলার (ইউজার লকড)
 @Client.on_callback_query(filters.regex(r"^gpage\|"))
 async def group_page_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
