@@ -8,7 +8,7 @@ BOT_TOKEN = "8970571544:AAHkBPmDzF9crRDbeCq6-Z3RNqDpEe7i9QA"  # BotFather থে
 
 # --- এডমিন কনফিগারেশন (মাল্টিপল এডমিন সাপোর্ট) ---
 # এখানে আপনার ও অন্য এডমিনদের টেলিগ্রাম আইডি কমা (,) দিয়ে বসিয়ে দিন।
-ADMINS = [8297458824]  # উদাহরণ: [8297458824, 123456789, 987654321]
+ADMINS = [8297458824,5370676246]  # উদাহরণ: [8297458824, 123456789, 987654321]
 
 # বটের প্রধান মালিক বা প্রথম এডমিন (আগের ফাইলের সাথে সামঞ্জস্য রাখার জন্য এটি রাখা হয়েছে)
 ADMIN_ID = ADMINS[0] if ADMINS else None
@@ -46,4 +46,4 @@ CHANNEL_LINK_1 = "https://t.me/+6hvCoblt6CxhZjhl"  # All Movie Link
 CHANNEL_LINK_2 = "https://t.me/TGLinkBase"         # Backup Channel
 
 # --- নতুন Visual ডিজাইন কনফিগারেশন ---
-START_BANNER = "https://github.com/NBBotz/Images/blob/main/Lucia-Filter-Bot.jpeg?raw=true"
+START_BANNER = "https://files.catbox.moe/k9xrhs.jpg"
