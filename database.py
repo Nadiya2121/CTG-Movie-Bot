@@ -39,7 +39,8 @@ async def add_user(user_id, username, first_name):
         await users_col.insert_one({
             "user_id": user_id,
             "username": username,
-            "first_name": first_name
+            "first_name": first_name,
+            "is_premium": False  # নতুন ইউজারের ডিফল্ট প্রিমিয়াম স্ট্যাটাস False
         })
 
 # ডুপ্লিকেট প্রটেকশন ফাইল সেভ লজিক
@@ -70,7 +71,6 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
 
 # অ্যান্ড সার্চ ও রিয়েল-টাইম সর্টিং লজিক (গ্লোবাল কুয়েরি স্যানিটাইজার যুক্ত করা হয়েছে)
 async def search_db(query):
-    # কুয়েরিতে ডট, আন্ডারস্কোর বা হাইফেন যাই থাকুক, সেটিকে স্পেস বানিয়ে শব্দ আলাদা করা হচ্ছে (১০০% সুরক্ষিত)
     clean_q = query.lower().replace(".", " ").replace("_", " ").replace("-", " ")
     words = clean_q.strip().split()
     if not words:
@@ -90,7 +90,7 @@ async def search_db(query):
             if not any(d['file_id'] == doc['file_id'] for d in results):
                 results.append(doc)
                 
-    # স্মার্ট সর্টিং অ্যালগরিদম
+    # スマート সর্টিং অ্যালগরিদম
     def get_sort_key(doc):
         name = doc.get("file_name", "Movie File").lower()
         q = query.lower()
@@ -168,4 +168,40 @@ async def save_movie_request(user_id, query):
             "status": "pending"
         })
         return True
+    return False
+
+
+# ==========================================
+# --- নতুন প্রিমিয়াম নিয়ন্ত্রণ লজিকসমূহ ---
+# ==========================================
+
+# ১. ইউজারকে প্রিমিয়াম মেম্বারশিপ দেওয়া
+async def add_premium_user(user_id: int):
+    # ইউজার যদি আগে থেকে ডাটাবেজে রেজিস্টার্ড না থাকে, তবে নতুন এন্ট্রি হবে
+    await users_col.update_one(
+        {"user_id": user_id},
+        {"$set": {"is_premium": True}},
+        upsert=True
+    )
+
+# ২. ইউজারের প্রিমিয়াম মেম্বারশিপ বাতিল করা
+async def remove_premium_user(user_id: int):
+    await users_col.update_one(
+        {"user_id": user_id},
+        {"$set": {"is_premium": False}}
+    )
+
+# ৩. সকল প্রিমিয়াম ইউজারের তালিকা এডমিন কমান্ডের জন্য রিটার্ন করা
+async def get_all_premium_users():
+    premium_users = []
+    cursor = users_col.find({"is_premium": True})
+    async for doc in cursor:
+        premium_users.append(doc["user_id"])
+    return premium_users
+
+# ৪. কোনো নির্দিষ্ট ইউজার প্রিমিয়াম কিনা তা চেক করা (সার্চ করার সময় এটি ব্যবহৃত হবে)
+async def is_premium_user(user_id: int) -> bool:
+    user = await users_col.find_one({"user_id": user_id})
+    if user:
+        return user.get("is_premium", False)
     return False
