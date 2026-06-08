@@ -6,6 +6,7 @@ import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import random
+import re
 from string import Template
 
 try:
@@ -17,8 +18,7 @@ except RuntimeError:
 from pyrogram import Client
 import config
 
-# ২. আল্ট্রা-প্রিমিয়াম নিয়ন আরজিবি মিনি অ্যাপ টেমপ্লেট (Netflix/Glowing Style)
-# এখানে লাইভ মুভি ফাইল সংখ্যা, সক্রিয় ইউজার এবং মঙ্গোডিবির মেমরি কাউন্টার যুক্ত করা হয়েছে।
+# ১. আল্ট্রা-প্রিমিয়াম নিয়ন আরজিবি মিনি অ্যাপ ডাউনলোড টেমপ্লেট
 HTML_TEMPLATE = Template("""
 <!DOCTYPE html>
 <html lang="en">
@@ -253,7 +253,6 @@ HTML_TEMPLATE = Template("""
     <div id="app-content" class="container" style="display: none;">
         <h2>CTG PREMIUM SEARCH</h2>
         
-        <!-- লাইভ স্ট্যাটাস ও মঙ্গোডিবি লাইভ স্টোরেজ মিটার সমৃদ্ধ ইনফরমেশন কার্ড -->
         <div class="info-card">
             <div class="info-row">
                 <span class="info-label">📊 Database Inventory:</span>
@@ -294,9 +293,154 @@ HTML_TEMPLATE = Template("""
 </html>
 """)
 
+# ২. প্রিমিয়াম স্ট্রিমিং প্লেয়ার ওয়েব পেজ টেমপ্লেট (HTML_STREAM_TEMPLATE)
+HTML_STREAM_TEMPLATE = Template("""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Movie - VIP Player</title>
+    <!-- টেলিগ্রাম ওয়েব অ্যাপ স্ক্রিপ্ট -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            background-color: #0b0c10;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 15px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 95vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: rgba(30, 30, 38, 0.65);
+            padding: 25px 15px;
+            border-radius: 24px;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 240, 255, 0.4);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            text-align: center;
+        }
+        h2 { 
+            color: #00f0ff; 
+            margin: 0 0 15px 0; 
+            font-size: 24px; 
+            font-weight: 800;
+            text-transform: uppercase;
+            text-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+        }
+        .video-player-box {
+            width: 100%;
+            background: #000;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
+            aspect-ratio: 16/9;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+        }
+        .info-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            padding: 12px;
+            margin-bottom: 20px;
+            text-align: left;
+            font-size: 13px;
+        }
+        .file-title {
+            color: #00ff88;
+            font-weight: bold;
+            word-break: break-all;
+        }
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .btn {
+            padding: 12px 10px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .btn-vlc { background: #e65c00; }
+        .btn-mx { background: #0080ff; }
+        .btn-playit { background: #33cc33; }
+        .btn-close { background: #374151; grid-column: span 2; }
+        .btn:hover { transform: scale(1.02); filter: brightness(1.1); }
+        .note {
+            font-size: 11px;
+            color: #9ca3af;
+            line-height: 1.4;
+        }
+    </style>
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        
+        function closeApp() {
+            tg.close();
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h2>👑 VIP Streaming Player</h2>
+        
+        <div class="video-player-box">
+            <!-- HTML5 Player (MP4 ফাইল সরাসরি প্লে হবে) -->
+            <video controls poster="https://github.com/NBBotz/Images/blob/main/Lucia-Filter-Bot.jpeg?raw=true">
+                <source src="$stream_url" type="video/mp4">
+                Your browser does not support HTML5 video streaming.
+            </video>
+        </div>
+        
+        <div class="info-card">
+            <div>🎬 <span class="file-title">$file_name</span></div>
+            <div style="margin-top: 5px; color: #9ca3af;">💾 Size: <b>$file_size MB</b> | Status: <b style="color: #00ff88;">VIP Streaming Enabled ⚡️</b></div>
+        </div>
+        
+        <div style="font-size: 12px; font-weight: bold; margin-bottom: 10px; color: #00f0ff;">👉 ব্রাউজারে প্লে না হলে বা MKV/অডিও সমস্যা হলে নিচের প্লেয়ারে ওপেন করুন:</div>
+        
+        <div class="btn-grid">
+            <a href="vlc://$stream_url" class="btn btn-vlc">🧡 Open in VLC</a>
+            <a href="intent:$stream_url#Intent;package=com.mxtech.videoplayer.ad;S.title=$file_name;end" class="btn btn-mx">💙 Open in MX Player</a>
+            <a href="intent:$stream_url#Intent;package=com.player.videoplayer;S.title=$file_name;end" class="btn btn-playit">💚 Open in Playit</a>
+            <button class="btn btn-close" onclick="closeApp()">🛑 Close Player</button>
+        </div>
+        
+        <div class="note">
+            ⚠️ <b>পরামর্শ:</b> MKV ফাইল বা ডুয়াল অডিও মুভিগুলো নির্বিঘ্নে দেখতে এবং বাংলা সাবটাইটেল সাপোর্ট করতে <b>VLC Player</b> অথবা <b>MX Player</b> ব্যবহার করুন।
+        </div>
+    </div>
+</body>
+</html>
+""")
+
 class DummyWebServer(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed_url = urlparse(self.path)
+        
+        # ১. মিনি অ্যাপ ডাউনলোড বাটন পেইজ
         if parsed_url.path == "/download":
             query_params = parse_qs(parsed_url.query)
             file_db_id = query_params.get("id", [""])[0]
@@ -310,7 +454,6 @@ class DummyWebServer(SimpleHTTPRequestHandler):
             else:
                 ad_link = f"{base_ad}?click_id={rand_click}&sub_id={rand_id}"
             
-            # --- মঙ্গোডিবি থেকে রিয়েল-টাইম লাইভ ডাটা ও মেমরি সংগ্রহ মেকানিজম ---
             total_files, total_users, used_mb, free_mb, free_percent = 0, 0, 0.0, 512.0, 100.0
             if app.loop and app.loop.is_running():
                 try:
@@ -320,7 +463,6 @@ class DummyWebServer(SimpleHTTPRequestHandler):
                 except Exception as e:
                     print(f"Failed to fetch live stats: {e}")
             
-            # ডাইনামিক লাইভ ডাটা দিয়ে টেমপ্লেট রিপ্লেস
             response_html = HTML_TEMPLATE.safe_substitute(
                 file_db_id=file_db_id,
                 bot_username=config.BOT_USERNAME,
@@ -336,6 +478,126 @@ class DummyWebServer(SimpleHTTPRequestHandler):
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(response_html.encode("utf-8"))
+
+        # ২. প্রিমিয়াম স্ট্রিমিং প্লেয়ার পেইজ
+        elif parsed_url.path == "/play":
+            query_params = parse_qs(parsed_url.query)
+            file_db_id = query_params.get("id", [""])[0]
+            
+            file_data = None
+            if app.loop and app.loop.is_running():
+                try:
+                    from database import get_file_by_db_id
+                    future = asyncio.run_coroutine_threadsafe(get_file_by_db_id(file_db_id), app.loop)
+                    file_data = future.result(timeout=2)
+                except Exception as e:
+                    print(f"Failed to fetch file for streaming: {e}")
+            
+            if not file_data:
+                self.send_error(404, "File Not Found")
+                return
+            
+            raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
+            stream_url = f"https://{raw_url}/stream?id={file_db_id}"
+            file_name = file_data.get("file_name", "Movie File")
+            
+            # অ্যানড্রয়েড ইন্টেন্ট এবং প্লেয়ারের জটিলতা এড়াতে ফালতু স্পেশাল ক্যারেক্টার ক্লিন করা হলো
+            safe_file_name = re.sub(r'[^a-zA-Z0-9\s\.\-_]', '', file_name)
+            file_size = round(file_data["file_size"] / (1024 * 1024), 2)
+            
+            response_html = HTML_STREAM_TEMPLATE.safe_substitute(
+                stream_url=stream_url,
+                file_name=safe_file_name,
+                file_size=file_size
+            )
+            
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(response_html.encode("utf-8"))
+
+        # ৩. প্রিমিয়াম ডাইরেক্ট লাইভ ভিডিও স্ট্রিমিং এন্ডপয়েন্ট (HTTP 206 Partial Content সহ)
+        elif parsed_url.path == "/stream":
+            query_params = parse_qs(parsed_url.query)
+            file_db_id = query_params.get("id", [""])[0]
+            
+            file_data = None
+            if app.loop and app.loop.is_running():
+                try:
+                    from database import get_file_by_db_id
+                    future = asyncio.run_coroutine_threadsafe(get_file_by_db_id(file_db_id), app.loop)
+                    file_data = future.result(timeout=2)
+                except Exception as e:
+                    print(f"Failed to fetch file metadata for stream: {e}")
+            
+            if not file_data:
+                self.send_error(404, "File Not Found")
+                return
+            
+            file_id = file_data["file_id"]
+            file_size = file_data["file_size"]
+            
+            # HTTP Range রিকোয়েস্ট হ্যান্ডেল করা হচ্ছে (ভিডিওর যেকোনো সেকেন্ডে টেনে টেনে দেখার জন্য)
+            range_header = self.headers.get("Range")
+            start = 0
+            end = file_size - 1
+            
+            if range_header:
+                match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+                if match:
+                    start = int(match.group(1))
+                    if match.group(2):
+                        end = int(match.group(2))
+            
+            if start > end or start >= file_size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{file_size}")
+                self.end_headers()
+                return
+            
+            content_len = end - start + 1
+            
+            self.send_response(206)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+            self.send_header("Content-Length", str(content_len))
+            self.send_header("Content-Disposition", f'inline; filename="{file_data["file_name"]}"')
+            self.end_headers()
+            
+            # ব্যাকগ্রাউন্ডে পাইরোগ্রাম দিয়ে ফাইল চ্যাঙ্ক রিমোটলি রিড করে স্ট্রিম করা হচ্ছে
+            if app.loop and app.loop.is_running():
+                async def stream_helper():
+                    try:
+                        # ১ এমবি করে চ্যাঙ্ক সাইজ নির্ধারণ (ফাস্ট লোডিংয়ের জন্য)
+                        chunk_size = 1024 * 1024
+                        offset_parts = start // chunk_size
+                        bytes_to_skip = start % chunk_size
+                        bytes_sent = 0
+                        
+                        async for chunk in app.stream_media(file_id, offset=offset_parts):
+                            if bytes_to_skip > 0:
+                                if len(chunk) > bytes_to_skip:
+                                    chunk = chunk[bytes_to_skip:]
+                                    bytes_to_skip = 0
+                                else:
+                                    bytes_to_skip -= len(chunk)
+                                    continue
+                            
+                            if bytes_sent + len(chunk) > content_len:
+                                chunk = chunk[:content_len - bytes_sent]
+                            
+                            self.wfile.write(chunk)
+                            bytes_sent += len(chunk)
+                            
+                            if bytes_sent >= content_len:
+                                break
+                    except Exception:
+                        # কানেকশন ক্লোজ হলে বা ইউজার প্লেয়ার বন্ধ করলে
+                        pass
+                
+                future = asyncio.run_coroutine_threadsafe(stream_helper(), app.loop)
+                future.result()  # স্ট্রিম শেষ হওয়া পর্যন্ত ওয়েট করবে
         else:
             self.send_response(200)
             self.send_header("Content-type", "text/html")
