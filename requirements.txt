@@ -1,7 +1,7 @@
 pyrofork==2.3.69
 tgcrypto-pyrofork
-motor==3.7.0
+pymongo[srv]==4.6.3
+motor==3.3.2
 dnspython==2.6.1
-fuzz.ratio
+fuzzywuzzy==0.18.0
 python-Levenshtein==0.27.3
-fuzzywuzzy
