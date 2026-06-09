@@ -11,6 +11,7 @@ db1 = client1["movie_search_bot"]
 files_col1 = db1["files"]
 users_col = db1["users"]
 requests_col = db1["requests"]
+groups_col = db1["groups"]  # নতুন গ্রুপ কালেকশন
 
 client2 = None
 files_col2 = None
@@ -40,7 +41,16 @@ async def add_user(user_id, username, first_name):
             "user_id": user_id,
             "username": username,
             "first_name": first_name,
-            "is_premium": False  # নতুন ইউজারের ডিফল্ট প্রিমিয়াম স্ট্যাটাস False
+            "is_premium": False
+        })
+
+# নতুন গ্রুপ সেভ করার লজিক (গ্রুপে সার্চ করলে অটো ট্র্যাক হবে)
+async def add_group(chat_id, chat_title):
+    exists = await groups_col.find_one({"chat_id": chat_id})
+    if not exists:
+        await groups_col.insert_one({
+            "chat_id": chat_id,
+            "chat_title": chat_title if chat_title else "Group"
         })
 
 # ডুপ্লিকেট প্রটেকশন ফাইল সেভ লজিক
@@ -69,7 +79,7 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
         
     return False
 
-# অ্যান্ড সার্চ ও রিয়েল-টাইম সর্টিং লজিক (গ্লোবাল কুয়েরি স্যানিটাইজার যুক্ত করা হয়েছে)
+# অ্যান্ড সার্চ ও রিয়েল-টাইম সর্টিং লজিক
 async def search_db(query):
     clean_q = query.lower().replace(".", " ").replace("_", " ").replace("-", " ")
     words = clean_q.strip().split()
@@ -90,7 +100,6 @@ async def search_db(query):
             if not any(d['file_id'] == doc['file_id'] for d in results):
                 results.append(doc)
                 
-    # スマート সর্টিং অ্যালগরিদম
     def get_sort_key(doc):
         name = doc.get("file_name", "Movie File").lower()
         q = query.lower()
@@ -113,28 +122,54 @@ async def get_file_by_db_id(db_id):
     except Exception:
         return None
 
-# মঙ্গোডিবির লাইভ মেমরি স্ট্যাটাস বের করার ফাংশন
+# প্রফেশনাল স্ট্যাটাস স্ক্রিনের জন্য নতুন মেমরি ও ডেটাবেজ স্ট্যাটাস মেকানিজম
 async def get_detailed_stats():
-    total_files = await files_col1.estimated_document_count()
+    # কালেকশন কাউন্ট
+    db1_files = await files_col1.estimated_document_count()
+    db2_files = 0
     if config.MULTIPLE_DB and files_col2:
-        total_files += await files_col2.estimated_document_count()
-    total_users = await users_col.estimated_document_count()
-    
-    try:
-        stats = await db1.command("dbstats")
-        used_bytes = stats.get("storageSize", 0) + stats.get("indexSize", 0)
-        used_mb = round(used_bytes / (1024 * 1024), 2)
-        free_mb = round(512.0 - used_mb, 2)
-        free_percent = round((free_mb / 512.0) * 100, 1)
-    except Exception as e:
-        print(f"Failed to fetch MongoDB stats: {e}")
-        used_mb, free_mb, free_percent = 0.01, 512.0, 100.0
+        db2_files = await files_col2.estimated_document_count()
         
-    return total_files, total_users, used_mb, free_mb, free_percent
+    total_users = await users_col.estimated_document_count()
+    premium_users = await users_col.count_documents({"is_premium": True})
+    total_groups = await groups_col.estimated_document_count()
+    
+    # ১ম ডাটাবেজ মেমরি
+    try:
+        stats1 = await db1.command("dbstats")
+        db1_used_bytes = stats1.get("storageSize", 0) + stats1.get("indexSize", 0)
+        db1_used = round(db1_used_bytes / (1024 * 1024), 2)
+        db1_free = round(512.0 - db1_used, 2)
+    except Exception:
+        db1_used, db1_free = 0.01, 512.0
+        
+    # ২য় ডাটাবেজ মেমরি (যদি সচল থাকে)
+    db2_used, db2_free = 0.0, 512.0
+    if config.MULTIPLE_DB and files_col2:
+        try:
+            stats2 = await db2.command("dbstats")
+            db2_used_bytes = stats2.get("storageSize", 0) + stats2.get("indexSize", 0)
+            db2_used = round(db2_used_bytes / (1024 * 1024), 2)
+            db2_free = round(512.0 - db2_used, 2)
+        except Exception:
+            db2_used, db2_free = 0.01, 512.0
+        
+    return {
+        "total_users": total_users,
+        "premium_users": premium_users,
+        "total_groups": total_groups,
+        "db1_files": db1_files,
+        "db1_used": db1_used,
+        "db1_free": db1_free,
+        "db2_files": db2_files,
+        "db2_used": db2_used,
+        "db2_free": db2_free,
+        "total_files": db1_files + db2_files
+    }
 
 async def get_stats():
-    total_files, total_users, _, _, _ = await get_detailed_stats()
-    return total_files, total_users
+    stats = await get_detailed_stats()
+    return stats["total_files"], stats["total_users"]
 
 async def delete_files_by_name(query):
     count = await files_col1.delete_many({"file_name": {"$regex": query, "$options": "i"}})
@@ -170,28 +205,20 @@ async def save_movie_request(user_id, query):
         return True
     return False
 
-
-# ==========================================
 # --- নতুন প্রিমিয়াম নিয়ন্ত্রণ লজিকসমূহ ---
-# ==========================================
-
-# ১. ইউজারকে প্রিমিয়াম মেম্বারশিপ দেওয়া
 async def add_premium_user(user_id: int):
-    # ইউজার যদি আগে থেকে ডাটাবেজে রেজিস্টার্ড না থাকে, তবে নতুন এন্ট্রি হবে
     await users_col.update_one(
         {"user_id": user_id},
         {"$set": {"is_premium": True}},
         upsert=True
     )
 
-# ২. ইউজারের প্রিমিয়াম মেম্বারশিপ বাতিল করা
 async def remove_premium_user(user_id: int):
     await users_col.update_one(
         {"user_id": user_id},
         {"$set": {"is_premium": False}}
     )
 
-# ৩. সকল প্রিমিয়াম ইউজারের তালিকা এডমিন কমান্ডের জন্য রিটার্ন করা
 async def get_all_premium_users():
     premium_users = []
     cursor = users_col.find({"is_premium": True})
@@ -199,7 +226,6 @@ async def get_all_premium_users():
         premium_users.append(doc["user_id"])
     return premium_users
 
-# ৪. কোনো নির্দিষ্ট ইউজার প্রিমিয়াম কিনা তা চেক করা (সার্চ করার সময় এটি ব্যবহৃত হবে)
 async def is_premium_user(user_id: int) -> bool:
     user = await users_col.find_one({"user_id": user_id})
     if user:
