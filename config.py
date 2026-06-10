@@ -9,7 +9,7 @@ BOT_TOKEN = "8970571544:AAHkBPmDzF9crRDbeCq6-Z3RNqDpEe7i9QA"  # BotFather থে
 
 # --- এডমিন কনফিগারেশন (মাল্টিপল এডমিন সাপোর্ট) ---
 # ব্র্যাকেটের ভেতরে আপনার ও অন্যান্য এডমিনদের টেলিগ্রাম আইডি কমা (,) দিয়ে যুক্ত করুন।
-ADMINS = [8297458824,5370676246]  # উদাহরণ: [8297458824, 12345678, 87654321]
+ADMINS = [8297458824, 5370676246]  # উদাহরণ: [8297458824, 12345678, 87654321]
 
 # বটের প্রধান মালিক বা প্রথম এডমিন
 ADMIN_ID = ADMINS[0] if ADMINS else None
@@ -19,6 +19,7 @@ is_admin = filters.create(lambda _, __, message: message.from_user and message.f
 
 # --- চ্যানেল ও ডাটাবেজ আইডি ---
 MAIN_CHANNEL_ID = -1002439983925  # প্রধান মুভি চ্যানেল আইডি (ফোর্স সাবস্ক্রিপশন)
+LOG_CHANNEL = -100xxxxxxxxxx      # 👈 আপনার রিকোয়েস্ট নোটিফিকেশন বা লগ চ্যানেল আইডি এখানে বসান (যেমন: -100123456789)
 
 # --- ডাবল ডাটাবেজ কনফিগারেশন ---
 DATABASE_URI = "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # আপনার ১ম MongoDB লিঙ্ক
@@ -42,7 +43,7 @@ DIRECT_AD_LINKS = [
     "https://omg10.com/4/11063339"
 ]
 
-# --- বাটনগুলোর জন্য নিজস্ব প্রমোশনাল ও সোশ্যাল লিংকসমূহ ---
+# --- বাটনগুলোর জন্য নিজস্ব প্রমোショナル ও সোশ্যাল লিংকসমূহ ---
 CHANNEL_LINK_1 = "https://t.me/+6hvCoblt6CxhZjhl"       # 🍿 All Movies বাটন লিংক
 CHANNEL_LINK_2 = "https://t.me/TGLinkBase"              # 📢 Backup Channel বাটন লিংক
 
