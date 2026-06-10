@@ -168,16 +168,16 @@ async def main_handler(client: Client, message: Message):
     # ==========================================
     if message.reply_to_message:
         parent_msg = message.reply_to_message
-        if parent_msg.text and "(রিকোয়েস্ট আইডি:" in parent_msg.text:
-            match_id = re.search(r"\(রিকোয়েস্ট আইডি:\s*`(\d+)`\)", parent_msg.text)
+        if parent_msg.text and "রিকোয়েস্ট আইডি" in parent_msg.text:
+            match_id = re.search(r"রিকোয়েস্ট আইডি:\s*(\d+)", parent_msg.text)
             if match_id:
                 target_user_id = int(match_id.group(1))
                 custom_text = text
                 
                 movie_name = "Requested Movie"
-                match_movie = re.search(r"🎬\s*মুভি:\s*`([^`]+)`", parent_msg.text)
+                match_movie = re.search(r"🎬\s*মুভি:\s*(.+)", parent_msg.text)
                 if match_movie:
-                    movie_name = match_movie.group(1)
+                    movie_name = match_movie.group(1).strip()
                 
                 user_msg = (
                     f"💬 **এডমিন আপনার রিকোয়েস্টের উত্তর দিয়েছেন!**\n\n"
@@ -737,7 +737,7 @@ async def tsearch_click_handler(client: Client, callback_query):
     else:
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
 
-# ৬. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
+#6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
 @Client.on_callback_query(filters.regex(r"^req\|"))
 async def request_movie_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
