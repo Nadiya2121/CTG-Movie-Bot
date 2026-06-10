@@ -286,14 +286,15 @@ async def main_handler(client: Client, message: Message):
             except:
                 pass
 
+            # রেফারেন্স অনুযায়ী নতুন এবং পরিমার্জিত স্টার্ট টেক্সট
             welcome_text = (
-                f"⚡️ **𝗖𝗧𝗚 𝗠𝗢𝗩𝗜𝗘 𝗦𝗘𝗔𝗥𝗖𝗛 𝗕𝗢𝗧** ⚡️\n\n"
-                f"👋 হ্যালো **{message.from_user.first_name or 'ইউজার'}**,\n"
-                f"মুভি খোঁজার সবচেয়ে দ্রুততম এবং প্রফেশনাল বটে আপনাকে স্বাগতম!\n\n"
+                f"👋 **Hey {message.from_user.mention}** 🍿\n\n"
+                f"I Am **CTG Movie Search Bot (Tier-1 Premium Edition)**\n"
+                f"I can find your favorite Movies, Series, Animes, and other files instantly!\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"🔍 **মুভি খোঁজার নিয়ম:**\n"
                 f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম (বানান সঠিক রেখে) লিখে মেসেজ পাঠান। যেমন: `KGF Chapter 2`\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🔹 **বটের প্রধান সুবিধাসমূহ:**\n"
+                f"⚡️ **বটের প্রধান সুবিধাসমূহ:**\n"
                 f"├─ ⚡️ আল্ট্রা হাই-স্পিড ডাউনলোড লিংক\n"
                 f"├─ 🗣 এআই চালিত অটো বানান সংশোধন ব্যবস্থা\n"
                 f"└─ 🍿 ৫টি প্রধান ভাষার হাজার হাজার মুভির কালেকশন\n"
@@ -301,18 +302,24 @@ async def main_handler(client: Client, message: Message):
                 f"👇 নিচের বাটনগুলো ব্যবহার করে আমাদের সাথে যুক্ত থাকুন।"
             )
 
-            # সংশোধিত বাটন গ্রিড (config.py থেকে সঠিক কাস্টম লিংকগুলো রিড করবে)
+            bot_username = getattr(config, "BOT_USERNAME", "bot")
+            dev_link = getattr(config, "DEVELOPER_LINK", "https://t.me/your_telegram_username") # config.py তে DEVELOPER_LINK না থাকলে এই ডিফল্ট লিংকটি কাজ করবে
+
+            # রেফারেন্স ইমেজ অনুযায়ী নতুন ৩-স্তরবিশিষ্ট সুন্দর বাটন লেআউট এবং ৪র্থ স্তরে ডেভলপার বাটন
             start_buttons = [
                 [
-                    InlineKeyboardButton("🍿 All Movies", url=config.CHANNEL_LINK_1),
-                    InlineKeyboardButton("💬 Movie Group", url=config.GROUP_LINK)
+                    InlineKeyboardButton("➕ Add Me To Your Groups ➕", url=f"https://t.me/{bot_username}?startgroup=true")
                 ],
                 [
-                    InlineKeyboardButton("👑 Buy Premium Access (No Ads)", callback_data="premium_info")
+                    InlineKeyboardButton("🔍 Search", url=config.GROUP_LINK),
+                    InlineKeyboardButton("🤖 Updates", url=config.CHANNEL_LINK_2)
                 ],
                 [
-                    InlineKeyboardButton("📢 Backup Channel", url=config.CHANNEL_LINK_2),
+                    InlineKeyboardButton("👑 Buy Premium", callback_data="premium_info"),
                     InlineKeyboardButton("❓ How to Use", url=config.HOW_TO_USE_LINK)
+                ],
+                [
+                    InlineKeyboardButton("👨‍💻 Owner & Developer", url=dev_link)
                 ]
             ]
             
@@ -693,30 +700,36 @@ async def premium_info_click_handler(client: Client, callback_query):
 @Client.on_callback_query(filters.regex(r"^start_back$"))
 async def start_back_handler(client: Client, callback_query):
     welcome_text = (
-        f"⚡️ **𝗖𝗧𝗚 𝗠𝗢𝗩𝗜𝗘 𝗦𝗘𝗔𝗥𝗖𝗛 𝗕𝗢𝗧** ⚡️\n\n"
-        f"👋 হ্যালো **{callback_query.from_user.first_name or 'ইউজার'}**,\n"
-        f"মুভি খোঁজার সবচেয়ে দ্রুততম এবং প্রফেশনাল বটে আপনাকে স্বাগতম!\n\n"
+        f"👋 **Hey {callback_query.from_user.mention}** 🍿\n\n"
+        f"I Am **CTG Movie Search Bot (Tier-1 Premium Edition)**\n"
+        f"I can find your favorite Movies, Series, Animes, and other files instantly!\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🔍 **মুভি খোঁজার নিয়ম:**\n"
         f"বটের ইনবক্সে সরাসরি যেকোনো মুভির নাম (বানান সঠিক রেখে) লিখে মেসেজ পাঠান। যেমন: `KGF Chapter 2`\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔹 **বটের প্রধান সুবিধাসমূহ:**\n"
+        f"⚡️ **বটের প্রধান সুবিধাসমূহ:**\n"
         f"├─ ⚡️ আল্ট্রা হাই-স্পিড ডাউনলোড লিংক\n"
         f"├─ 🗣 এআই চালিত অটো বানান সংশোধন ব্যবস্থা\n"
         f"└─ 🍿 ৫টি প্রধান ভাষার হাজার হাজার মুভির কালেকশন\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"👇 নিচের বাটনগুলো ব্যবহার করে আমাদের সাথে যুক্ত থাকুন।"
     )
+    bot_username = getattr(config, "BOT_USERNAME", "bot")
+    dev_link = getattr(config, "DEVELOPER_LINK", "https://t.me/your_telegram_username")
+    
     start_buttons = [
         [
-            InlineKeyboardButton("🍿 All Movies", url=config.CHANNEL_LINK_1),
-            InlineKeyboardButton("💬 Movie Group", url=config.GROUP_LINK)
+            InlineKeyboardButton("➕ Add Me To Your Groups ➕", url=f"https://t.me/{bot_username}?startgroup=true")
         ],
         [
-            InlineKeyboardButton("👑 Buy Premium Access (No Ads)", callback_data="premium_info")
+            InlineKeyboardButton("🔍 Search", url=config.GROUP_LINK),
+            InlineKeyboardButton("🤖 Updates", url=config.CHANNEL_LINK_2)
         ],
         [
-            InlineKeyboardButton("📢 Backup Channel", url=config.CHANNEL_LINK_2),
+            InlineKeyboardButton("👑 Buy Premium", callback_data="premium_info"),
             InlineKeyboardButton("❓ How to Use", url=config.HOW_TO_USE_LINK)
+        ],
+        [
+            InlineKeyboardButton("👨‍💻 Owner & Developer", url=dev_link)
         ]
     ]
     try:
