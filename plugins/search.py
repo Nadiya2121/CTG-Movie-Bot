@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import urllib.parse  # শেয়ার লিংকের টেক্সট এনকোড করার জন্য
 from fuzzywuzzy import process, fuzz  # fuzz ইম্পোর্ট করা হয়েছে স্ট্রিক্ট সর্টিংয়ের জন্য
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -29,7 +30,7 @@ def clean_movie_title(name: str) -> str:
     # ৩. মুভি ফাইল এক্সটেনশন ডিলিট
     name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
     
-    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
+    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইфেন স্পেস দিয়ে প্রতিস্থাপন
     name = name.replace(".", " ").replace("_", " ").replace("-", " ")
     
     # অতিরিক্ত ডাবল স্পেস ক্লিন করা
@@ -224,18 +225,31 @@ async def main_handler(client: Client, message: Message):
                             cleaned_name = clean_movie_title(raw_name)
                             file_size = round(file_data["file_size"] / (1024 * 1024), 2)
                             
+                            # পূর্বের সুরক্ষিত নোটিশটি বজায় রাখা হয়েছে
                             caption_text = (
                                 f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
                                 f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
-                                f"📢 **চ্যানেল লিংকসমূহ নিচে দেওয়া হলো:**\n"
-                                f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে যুক্ত থাকুন।\n\n"
+                                f"📢 **চ্যানেল ও গ্রুপ লিংকসমূহ নিচে দেওয়া হলো:**\n"
+                                f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে এবং গ্রুপে যুক্ত থাকুন।\n\n"
                                 f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
                                 f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
                             )
                             
+                            bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
+                            share_text = f"🍿 Get '{cleaned_name}' movie instantly from this bot!"
+                            encoded_share_text = urllib.parse.quote(share_text)
+                            # ডায়নামিক শেয়ারিং লিংক জেনারেট করা হচ্ছে
+                            share_url = f"https://t.me/share/url?url=https://t.me/{bot_username}?start=get_{file_db_id}&text={encoded_share_text}"
+                            
+                            # রেফারেন্স অনুযায়ী নতুন এবং পরিচ্ছন্ন বাটন লেআউট
                             promo_buttons = [
-                                [InlineKeyboardButton("🍿 All Movie Link", url=config.CHANNEL_LINK_1)],
-                                [InlineKeyboardButton("📢 Join Backup Channel", url=config.CHANNEL_LINK_2)]
+                                [
+                                    InlineKeyboardButton("📢 Channel ↗️", url=config.CHANNEL_LINK_2),
+                                    InlineKeyboardButton("💬 Groups ↗️", url=config.GROUP_LINK)
+                                ],
+                                [
+                                    InlineKeyboardButton("📲 Share With Friends ➡️", url=share_url)
+                                ]
                             ]
                             
                             sent_file = await client.send_cached_media(
@@ -750,7 +764,7 @@ async def tsearch_click_handler(client: Client, callback_query):
     else:
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
 
-# ৬. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
+#6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
 @Client.on_callback_query(filters.regex(r"^req\|"))
 async def request_movie_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
