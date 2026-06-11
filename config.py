@@ -8,7 +8,6 @@ API_HASH = "297f51aaab99720a09e80273628c3c24"  # আপনার Telegram API Ha
 BOT_TOKEN = "8970571544:AAHkBPmDzF9crRDbeCq6-Z3RNqDpEe7i9QA"  # BotFather থেকে পাওয়া টোকেন
 
 # --- এডমিন কনফিগারেশন (মাল্টিপল এডমিন সাপোর্ট) ---
-# ব্র্যাকেটের ভেতরে আপনার ও অন্যান্য এডমিনদের টেলিগ্রাম আইডি কমা (,) দিয়ে যুক্ত করুন।
 ADMINS = [8297458824, 5370676246]  # উদাহরণ: [8297458824, 12345678, 87654321]
 
 # বটের প্রধান মালিক বা প্রথম এডমিন
@@ -19,12 +18,23 @@ is_admin = filters.create(lambda _, __, message: message.from_user and message.f
 
 # --- চ্যানেল ও ডাটাবেজ আইডি ---
 MAIN_CHANNEL_ID = -1002439983925  # প্রধান মুভি চ্যানেল আইডি (ফোর্স সাবস্ক্রিপশন)
-LOG_CHANNEL = -1003973741130      # 👈 আপনার রিকোয়েস্ট নোটিফিকেশন বা লগ চ্যানেল আইডি এখানে বসান (যেমন: -100123456789)
+LOG_CHANNEL = -1003973741130      # আপনার রিকোয়েস্ট নোটিফিকেশন বা লগ চ্যানেল আইডি
 
-# --- ডাবল ডাটাবেজ কনফিগারেশন ---
-DATABASE_URI = "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # আপনার ১ম MongoDB লিঙ্ক
-MULTIPLE_DB = False                 
-DATABASE_URI2 = "mongodb+srv://..." 
+# --- মাল্টিপল ডাটাবেজ কনফিগারেশন (Multi-DB Config) ---
+
+# ১. ইউজার ডাটাবেজ (এখানে শুধুমাত্র ইউজার, গ্রুপ ও প্রিমিয়াম ডাটা সেভ থাকবে)
+USER_DATABASE_URI = "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+
+# ২. ফাইল বা মুভি ডাটাবেজগুলোর তালিকা 
+# আপনি এখানে যত খুশি মঙ্গোডিবি লিংক কমা (,) দিয়ে নিচে নিচে বসাতে পারবেন।
+FILE_DATABASE_URIS = [
+    "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ১ম ফাইল ডিবি
+    # "mongodb+srv://your_second_db_link_here...", # ২য় ফাইল ডিবি (ভবিষ্যতে প্রয়োজন হলে হ্যাস '#' সরিয়ে লিংক বসাবেন)
+    # "mongodb+srv://your_third_db_link_here...",  # ৩য় ফাইল ডিবি
+]
+
+# ৩. প্রতিটি ফাইল ডাটাবেজের সর্বোচ্চ স্টোরেজ লিমিট (আপনার নির্দেশ অনুযায়ী ৪০০ এমবি সেট করা হয়েছে)
+DB_LIMIT_MB = 400
 
 # --- আর্নিং ও মিনি অ্যাপ কনফিগারেশন ---
 BOT_USERNAME = "CTGMovieBot"  # বটের ইউজারনেম ( শুরুতে @ দেবেন না)
@@ -47,9 +57,9 @@ DIRECT_AD_LINKS = [
 CHANNEL_LINK_1 = "https://t.me/+6hvCoblt6CxhZjhl"       # 🍿 All Movies বাটন লিংক
 CHANNEL_LINK_2 = "https://t.me/TGLinkBase"              # 📢 Backup Channel বাটন লিংক
 
-GROUP_LINK = "https://t.me/Movie_Request_Group_23"           # 💬 Movie Group বাটন লিংক (আপনার গ্রুপের লিংক দিন)
-HOW_TO_USE_LINK = "https://t.me/HowtoDowlnoad"             # ❓ How to Use বাটন লিংক (টিউটোরিয়াল ভিডিও লিংক দিন)
-DEVELOPER_LINK = "https://t.me/ProBotDeveloperBot"     # 👨‍💻 Owner & Developer বাটন লিংক (এখানে আপনার নিজের ইউজারনেম বসিয়ে দিন)
+GROUP_LINK = "https://t.me/Movie_Request_Group_23"           # 💬 Movie Group বাটন লিংক
+HOW_TO_USE_LINK = "https://t.me/HowtoDowlnoad"             # ❓ How to Use বাটন লিংক
+DEVELOPER_LINK = "https://t.me/ProBotDeveloperBot"     # 👨‍💻 Owner & Developer বাটন লিংক
 
 # --- নতুন ভিজ্যুয়াল ডিজাইন কনফিগারেশন ---
 START_BANNER = "https://files.catbox.moe/k9xrhs.jpg"
