@@ -248,7 +248,7 @@ async def main_handler(client: Client, message: Message):
                                 ]
                             ]
                             
-                            # ফাইলের এক্সটেনশন ডিটেক্ট করে রিনেম করার লজিক
+                            # ফাইলের আসল এক্সটেনশন ডিটেক্ট করে নতুন নামে ডেলিভারি দেওয়ার লজিক
                             ext = ".mkv"
                             if raw_name.lower().endswith(".mp4"):
                                 ext = ".mp4"
@@ -263,7 +263,7 @@ async def main_handler(client: Client, message: Message):
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
                                 caption=caption_text,
-                                file_name=safe_file_name, # ফ্লাইতে ফাইল রিনেম হচ্ছে
+                                file_name=safe_file_name, # ফ্লাইতে ফাইল রিনেম করে ডেলিভারি
                                 reply_markup=InlineKeyboardMarkup(promo_buttons)
                             )
                             asyncio.create_task(auto_delete_file(sent_file))
