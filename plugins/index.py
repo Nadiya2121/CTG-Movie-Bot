@@ -5,6 +5,8 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 import config
 from database import save_file, get_active_files_collection, requests_col
+# circular import এড়াতে এবং কোড ক্লিন রাখতে search প্লাগইন থেকে clean_movie_title ইম্পোর্ট করা হলো
+from plugins.search import clean_movie_title
 
 # ইনডেক্সিং স্টেট ট্র্যাকিং (স্কিপ কাউন্ট সহ)
 INDEX_STATES = {}
@@ -25,7 +27,7 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
             if req_query in file_name.lower():
                 user_id = req["user_id"]
                 
-                from plugins.search import clean_movie_title
+                # ইনডেক্সিং এর সময় নাম অলরেডি ক্লিন করা থাকে, তবুও ডাবল সেফটির জন্য ক্লিন করা হচ্ছে
                 cleaned_name = clean_movie_title(file_name)
                 
                 raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
@@ -53,27 +55,29 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         print(f"Request notify error: {e}")
 
 
-# মেইন চ্যানেলের অটো-ইনডেক্সিং
+# মেইন চ্যানেলের অটো-ইনডেক্সিং (অটো-রিনেম ফিচার সহ)
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_index(client: Client, message: Message):
     file = message.document or message.video
     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
     
+    # [অটো-রিনেম]: মঙ্গোডিবিতে সেভ করার আগেই ফাইল নামটি সম্পূর্ণ ক্লিন করে ফেলা হচ্ছে
+    cleaned_fname = clean_movie_title(raw_fname)
+    
     saved_id = await save_file(
-        file_name=raw_fname,
+        file_name=cleaned_fname, # ক্লিন নাম সেভ হচ্ছে
         file_size=file.file_size,
         file_id=file.file_id,
         chat_id=message.chat.id,
         message_id=message.id
     )
     if saved_id and isinstance(saved_id, str):
-        asyncio.create_task(check_and_notify_requests(client, raw_fname, saved_id))
+        asyncio.create_task(check_and_notify_requests(client, cleaned_fname, saved_id))
 
 
-# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip Support)
+# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip & Auto-Rename Support)
 @Client.on_message(filters.command("index") & is_admin & filters.private)
 async def index_start_cmd(client: Client, message: Message):
-    # কমান্ডের সাথে কোনো স্কিপ সংখ্যা দেওয়া হয়েছে কিনা চেক করা হচ্ছে
     skip_count = 0
     if len(message.command) > 1:
         try:
@@ -82,7 +86,6 @@ async def index_start_cmd(client: Client, message: Message):
             await message.reply_text("⚠️ **ভুল সংখ্যা!** দয়া করে সঠিক সংখ্যা লিখুন। যেমন: `/index 200000`")
             return
             
-    # স্টেট সেভ করা হচ্ছে
     INDEX_STATES[message.from_user.id] = {
         "active": True,
         "skip": skip_count
@@ -104,11 +107,9 @@ async def process_index_forward(client: Client, message: Message):
     user_id = message.from_user.id
     state = INDEX_STATES.get(user_id)
     
-    # ইনডেক্সিং স্টেট চেক
     if not state or not state.get("active"):
         return
 
-    # স্টেট রিসেট
     INDEX_STATES[user_id] = {"active": False, "skip": 0}
 
     if not message.forward_from_chat:
@@ -118,7 +119,6 @@ async def process_index_forward(client: Client, message: Message):
     chat_id = message.forward_from_chat.id
     last_msg_id = message.forward_from_message_id
     
-    # স্কিপ কাউন্ট নেওয়া হচ্ছে
     skip_count = state.get("skip", 0)
     current_id = last_msg_id - skip_count
     
@@ -133,7 +133,7 @@ async def process_index_forward(client: Client, message: Message):
     
     saved_count = 0
     skipped_count = 0  
-    scanned_count = skip_count # মোট স্ক্যানকৃত কাউন্ট শুরুতেই স্কিপ কাউন্ট দিয়ে সেট করা হলো
+    scanned_count = skip_count
     chunk_size = 200
     last_edit_scanned_count = skip_count 
 
@@ -152,8 +152,11 @@ async def process_index_forward(client: Client, message: Message):
                     file = msg.document or msg.video
                     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
                     
+                    # [অটো-রিনেম]: ব্যাচ ইনসার্ট করার আগেই নাম ক্লিন করা হচ্ছে
+                    cleaned_fname = clean_movie_title(raw_fname)
+                    
                     batch_files.append({
-                        "file_name": raw_fname,
+                        "file_name": cleaned_fname, # ক্লিন নাম ডাটাবেজে স্টোর হবে
                         "file_size": file.file_size,
                         "file_id": file.file_id,
                         "chat_id": chat_id,
@@ -161,7 +164,6 @@ async def process_index_forward(client: Client, message: Message):
                     })
 
             if batch_files:
-                # ডাবল-ডিবি ডায়নামিক সুইচিং
                 active_col = await get_active_files_collection()
                 if active_col is None:
                     raise Exception("কোনো সচল ফাইল ডাটাবেজ কালেকশন খুঁজে পাওয়া যায়নি!")
