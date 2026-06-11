@@ -60,7 +60,7 @@ async def auto_index(client: Client, message: Message):
     file = message.document or message.video
     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
     
-    # save_file এখন সরাসরি ইউনিক অবজেক্ট আইডি (string) রিটার্ন করবে
+    # save_file এখন সরাসরি ইউনিক অবজেক্ট আইডি (string) রিটার্ন করে
     saved_id = await save_file(
         file_name=raw_fname,
         file_size=file.file_size,
@@ -110,8 +110,6 @@ async def process_index_forward(client: Client, message: Message):
     last_edit_scanned_count = 0 
 
     try:
-        active_col = await get_active_files_collection()
-        
         while current_id > 0:
             start_id = max(1, current_id - chunk_size + 1)
             msg_ids = list(range(start_id, current_id + 1))
@@ -135,6 +133,14 @@ async def process_index_forward(client: Client, message: Message):
                     })
 
             if batch_files:
+                # [নতুন ডায়নামিক ফিচার]: প্রতি ব্যাচ ইনসার্ট করার আগে অ্যাক্টিভ ডাটাবেজ চেক করা হচ্ছে,
+                # যাতে ইনডেক্সিং চলাকালীন সময়েই ডাটাবেজ ফুল হলে স্বয়ংক্রিয়ভাবে পরের ডিবিতে ডাটা চলে যায়।
+                active_col = await get_active_files_collection()
+                
+                # যদি কোনো কারণে ডায়নামিক কালেকশন না পাওয়া যায়
+                if active_col is None:
+                    raise Exception("কোনো সচল ফাইল ডাটাবেজ কালেকশন খুঁজে পাওয়া যায়নি!")
+
                 file_ids = [f["file_id"] for f in batch_files]
                 file_names = [f["file_name"] for f in batch_files]
                 
@@ -156,11 +162,10 @@ async def process_index_forward(client: Client, message: Message):
                         skipped_count += 1
                 
                 if to_insert:
-                    # মঙ্গোডিবি ব্যাচ ইনসার্ট
                     await active_col.insert_many(to_insert)
                     saved_count += len(to_insert)
                     
-                    # ইনসার্ট হওয়ার পর পাইমঙ্গো ডিকশনারিতে স্বয়ংক্রিয়ভাবে '_id' যোগ করে দেয়
+                    # নোটিফিকেশন টাস্ক রান
                     for doc in to_insert:
                         doc_id = str(doc["_id"])
                         asyncio.create_task(check_and_notify_requests(client, doc["file_name"], doc_id))
