@@ -4,9 +4,9 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 import config
-# database থেকে প্রয়োজনীয় ফাংশন ও কালেকশন ইম্পোর্ট করা হয়েছে
 from database import save_file, get_active_files_collection, requests_col
 
+# ইনডেক্সিং স্টেট ট্র্যাকিং (স্কিপ কাউন্ট সহ)
 INDEX_STATES = {}
 
 # মাল্টিপল এডমিন ফিল্টার (config.ADMINS তালিকা চেক করবে)
@@ -18,7 +18,6 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         return
         
     try:
-        # সরাসরি ইম্পোর্ট করা requests_col ব্যবহার করা হচ্ছে (ডাবল-ডিবি সেফটি ফিক্স)
         cursor = requests_col.find({"status": "pending"})
         async for req in cursor:
             req_query = req["query"].lower().strip()
@@ -54,13 +53,12 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         print(f"Request notify error: {e}")
 
 
-# মেইন চ্যানেলের অটো-ইনডেক্সিং (অপ্টিমাইজড ও ডাবল-ডিবি সেফ)
+# মেইন চ্যানেলের অটো-ইনডেক্সিং
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_index(client: Client, message: Message):
     file = message.document or message.video
     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
     
-    # save_file এখন সরাসরি ইউনিক অবজেক্ট আইডি (string) রিটার্ন করে
     saved_id = await save_file(
         file_name=raw_fname,
         file_size=file.file_size,
@@ -69,30 +67,49 @@ async def auto_index(client: Client, message: Message):
         message_id=message.id
     )
     if saved_id and isinstance(saved_id, str):
-        # অতিরিক্ত ডাটাবেজ সার্চ ছাড়াই সরাসরি নোটিফিকেশন টাস্ক রান হবে
         asyncio.create_task(check_and_notify_requests(client, raw_fname, saved_id))
 
 
-# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch Method)
+# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip Support)
 @Client.on_message(filters.command("index") & is_admin & filters.private)
 async def index_start_cmd(client: Client, message: Message):
-    INDEX_STATES[message.from_user.id] = True
+    # কমান্ডের সাথে কোনো স্কিপ সংখ্যা দেওয়া হয়েছে কিনা চেক করা হচ্ছে
+    skip_count = 0
+    if len(message.command) > 1:
+        try:
+            skip_count = int(message.command[1])
+        except ValueError:
+            await message.reply_text("⚠️ **ভুল সংখ্যা!** দয়া করে সঠিক সংখ্যা লিখুন। যেমন: `/index 200000`")
+            return
+            
+    # স্টেট সেভ করা হচ্ছে
+    INDEX_STATES[message.from_user.id] = {
+        "active": True,
+        "skip": skip_count
+    }
+    
+    skip_text = f" (প্রথম `{skip_count}` টি মেসেজ স্কিপ করা হবে)" if skip_count > 0 else ""
     instructions = (
-        "📥 **চ্যানেল ইনডেক্সিং কন্ট্রোল প্যানেল (Turbo Speed)**\n\n"
-        "অন্য যেকোনো চ্যানেল থেকে সব মুভি ইনডেক্স করতে নিচের নিয়ম অনুসরণ করুন:\n\n"
-        "১️⃣ প্রথমে নিশ্চিত করুন বটটি ওই চ্যানেলে **অ্যাডমিন (Admin)** হিসেবে যুক্ত আছে।\n"
-        "২️⃣ এবার ওই চ্যানেলের **সর্বশেষ (Last) ফাইল বা মেসেজটি** এখানে ফরোয়ার্ড (Forward) করুন।\n\n"
-        "👉 *ফাইলটি পাওয়ার পর বট স্বয়ংক্রিয়ভাবে পেছনের সমস্ত ফাইল ডাটাবেজে ইনডেক্স করা শুরু করবে।*"
+        f"📥 **চ্যানেল ইনডেক্সিং কন্ট্রোল প্যানেল (Turbo Speed)**\n"
+        f"⚙️ স্ট্যাটাস: **সচল**{skip_text}\n\n"
+        f"অন্য যেকোনো চ্যানেল থেকে সব মুভি ইনডেক্স করতে নিচের নিয়ম অনুসরণ করুন:\n\n"
+        f"১️⃣ প্রথমে নিশ্চিত করুন বটটি ওই চ্যানেলে **অ্যাডমিন (Admin)** হিসেবে যুক্ত আছে।\n"
+        f"২️⃣ এবার ওই চ্যানেলের **সর্বশেষ (Last) ফাইল বা মেসেজটি** এখানে ফরোয়ার্ড (Forward) করুন।\n\n"
+        f"👉 *ফাইলটি পাওয়ার পর বট স্বয়ংক্রিয়ভাবে পেছনের সমস্ত ফাইল ডাটাবেজে ইনডেক্স করা শুরু করবে।*"
     )
     await message.reply_text(instructions)
 
 @Client.on_message(filters.forwarded & filters.private & is_admin)
 async def process_index_forward(client: Client, message: Message):
     user_id = message.from_user.id
-    if not INDEX_STATES.get(user_id):
+    state = INDEX_STATES.get(user_id)
+    
+    # ইনডেক্সিং স্টেট চেক
+    if not state or not state.get("active"):
         return
 
-    INDEX_STATES[user_id] = False
+    # স্টেট রিসেট
+    INDEX_STATES[user_id] = {"active": False, "skip": 0}
 
     if not message.forward_from_chat:
         await message.reply_text("❌ এটি কোনো চ্যানেল থেকে ফরোয়ার্ড করা হয়নি।")
@@ -100,14 +117,25 @@ async def process_index_forward(client: Client, message: Message):
 
     chat_id = message.forward_from_chat.id
     last_msg_id = message.forward_from_message_id
-    status_msg = await message.reply_text("⏳ **Turbo Speed ইনডেক্সিং কানেকশন তৈরি হচ্ছে...**")
+    
+    # স্কিপ কাউন্ট নেওয়া হচ্ছে
+    skip_count = state.get("skip", 0)
+    current_id = last_msg_id - skip_count
+    
+    if current_id <= 0:
+        await message.reply_text(f"⚠️ **ভুল সংখ্যা!** আপনার স্কিপ করার সংখ্যা `{skip_count}` মূল মেসেজ আইডি `{last_msg_id}` থেকে বড় বা সমান।")
+        return
+
+    status_msg = await message.reply_text(
+        f"⏳ **Turbo Speed ইনডেক্সিং কানেকশন তৈরি হচ্ছে...**\n"
+        f"ℹ️ শুরু হচ্ছে মেসেজ আইডি: `{current_id}` থেকে (স্কিপ করা হয়েছে: `{skip_count}` টি মেসেজ)"
+    )
     
     saved_count = 0
     skipped_count = 0  
-    scanned_count = 0
+    scanned_count = skip_count # মোট স্ক্যানকৃত কাউন্ট শুরুতেই স্কিপ কাউন্ট দিয়ে সেট করা হলো
     chunk_size = 200
-    current_id = last_msg_id
-    last_edit_scanned_count = 0 
+    last_edit_scanned_count = skip_count 
 
     try:
         while current_id > 0:
@@ -133,11 +161,8 @@ async def process_index_forward(client: Client, message: Message):
                     })
 
             if batch_files:
-                # [নতুন ডায়নামিক ফিচার]: প্রতি ব্যাচ ইনসার্ট করার আগে অ্যাক্টিভ ডাটাবেজ চেক করা হচ্ছে,
-                # যাতে ইনডেক্সিং চলাকালীন সময়েই ডাটাবেজ ফুল হলে স্বয়ংক্রিয়ভাবে পরের ডিবিতে ডাটা চলে যায়।
+                # ডাবল-ডিবি ডায়নামিক সুইচিং
                 active_col = await get_active_files_collection()
-                
-                # যদি কোনো কারণে ডায়নামিক কালেকশন না পাওয়া যায়
                 if active_col is None:
                     raise Exception("কোনো সচল ফাইল ডাটাবেজ কালেকশন খুঁজে পাওয়া যায়নি!")
 
@@ -165,7 +190,6 @@ async def process_index_forward(client: Client, message: Message):
                     await active_col.insert_many(to_insert)
                     saved_count += len(to_insert)
                     
-                    # নোটিফিকেশন টাস্ক রান
                     for doc in to_insert:
                         doc_id = str(doc["_id"])
                         asyncio.create_task(check_and_notify_requests(client, doc["file_name"], doc_id))
