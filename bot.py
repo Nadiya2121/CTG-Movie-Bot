@@ -18,7 +18,7 @@ except RuntimeError:
 from pyrogram import Client
 import config
 
-# ১. সাধারণ (Free) ইউজারদের জন্য মিনি অ্যাপ ডাউনলোড টেমপ্লেট
+# ১. সাধারণ (Free) ইউজারদের জন্য মিনি অ্যাপ ডাউনলোড টেমপ্লেট (নতুন নিওন-গ্লোয়িং ড্যাশবোর্ড সহ)
 HTML_TEMPLATE = Template("""
 <!DOCTYPE html>
 <html lang="en">
@@ -64,34 +64,60 @@ HTML_TEMPLATE = Template("""
         h2 { 
             color: #ff0055; 
             margin: 0 0 15px 0; 
-            font-size: 28px; 
+            font-size: 26px; 
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 1px;
             text-shadow: 0 0 12px rgba(255, 0, 85, 0.4);
         }
         
-        /* প্রফেশনাল ফাইল ইনফরমেশন কার্ড */
+        /* সম্পূর্ণ রি-ডিজাইনকৃত প্রিমিয়াম ড্যাশবোর্ড কার্ড */
         .info-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            border-radius: 16px;
             padding: 16px;
             margin-bottom: 20px;
             text-align: left;
+            box-shadow: inset 0 0 15px rgba(0, 240, 255, 0.05);
         }
         .info-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
+            align-items: center;
+            margin-bottom: 10px;
             font-size: 13px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            padding-bottom: 8px;
         }
-        .info-row:last-child { margin-bottom: 0; }
-        .info-label { color: #9ca3af; }
-        .info-value { color: #ffffff; font-weight: 600; }
-        .info-value.neon-green { color: #00ff88; text-shadow: 0 0 8px rgba(0, 255, 136, 0.2); }
-        .info-value.neon-blue { color: #00f0ff; text-shadow: 0 0 8px rgba(0, 240, 255, 0.2); }
-        .info-value.neon-red { color: #ff0055; text-shadow: 0 0 8px rgba(255, 0, 85, 0.2); }
+        .info-row:last-child { 
+            margin-bottom: 0; 
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .info-label { 
+            color: #9ca3af; 
+            display: flex;
+            align-items: center;
+        }
+        
+        /* লাইভ স্ট্যাটাস ব্লিংকিং ডট */
+        .status-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-dot.blue { background-color: #00f0ff; box-shadow: 0 0 8px #00f0ff; }
+        .status-dot.green { background-color: #00ff88; box-shadow: 0 0 8px #00ff88; }
+        .status-dot.purple { background-color: #bd00ff; box-shadow: 0 0 8px #bd00ff; }
+        .status-dot.safe { background-color: #00ffaa; box-shadow: 0 0 8px #00ffaa; }
+        
+        .info-value { color: #ffffff; font-weight: 700; font-family: monospace; font-size: 14px; }
+        .neon-green { color: #00ff88; text-shadow: 0 0 8px rgba(0, 255, 136, 0.3); }
+        .neon-blue { color: #00f0ff; text-shadow: 0 0 8px rgba(0, 240, 255, 0.3); }
+        .neon-purple { color: #bd00ff; text-shadow: 0 0 8px rgba(189, 0, 255, 0.3); }
         
         .step-card {
             background: rgba(255, 255, 255, 0.04);
@@ -255,24 +281,20 @@ HTML_TEMPLATE = Template("""
         
         <div class="info-card">
             <div class="info-row">
-                <span class="info-label">📊 Database Inventory:</span>
+                <span class="info-label"><span class="status-dot blue"></span> 📊 Database Inventory:</span>
                 <span class="info-value neon-blue">$total_files+ Movies</span>
             </div>
             <div class="info-row">
-                <span class="info-label">👥 Active Users:</span>
-                <span class="info-value neon-green">$total_users+ Connected</span>
+                <span class="info-label"><span class="status-dot green"></span> 👥 Connected Users:</span>
+                <span class="info-value neon-green">$total_users+ Online</span>
             </div>
             <div class="info-row">
-                <span class="info-label">💾 Storage Used:</span>
-                <span class="info-value neon-red">$used_mb MB / 512 MB</span>
+                <span class="info-label"><span class="status-dot purple"></span> 💾 Storage Used:</span>
+                <span class="info-value neon-purple">$used_storage</span>
             </div>
             <div class="info-row">
-                <span class="info-label">📉 Free Storage Left:</span>
-                <span class="info-value neon-green">$free_mb MB ($free_percent% Free)</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">🌐 Server Port Speed:</span>
-                <span class="info-value">1 Gbps Unlimited</span>
+                <span class="info-label"><span class="status-dot safe"></span> 📉 Free Buffer Space:</span>
+                <span class="info-value neon-green">$free_storage</span>
             </div>
         </div>
         
@@ -664,8 +686,8 @@ class DummyWebServer(SimpleHTTPRequestHandler):
                 else:
                     ad_link = f"{base_ad}?click_id={rand_click}&sub_id={rand_id}"
                 
-                # সংশোধিত লাইভ ডাটা রিড মেকানিজম (Unpacking issue fixed)
-                total_files, total_users, used_mb, free_mb, free_percent = 0, 0, 0.0, 512.0, 100.0
+                # [সংশোধিত ও অপ্টিমাইজড লাইভ স্ট্যাটাস মেকানিজম]
+                total_files, total_users, used_storage, free_storage = 0, 0, "0.0 MB", "2.0 GB"
                 if app.loop and app.loop.is_running():
                     try:
                         from database import get_detailed_stats
@@ -674,9 +696,8 @@ class DummyWebServer(SimpleHTTPRequestHandler):
                         
                         total_files = stats_dict.get("total_files", 0)
                         total_users = stats_dict.get("total_users", 0)
-                        used_mb = stats_dict.get("db1_used", 0.0)
-                        free_mb = stats_dict.get("db1_free", 512.0)
-                        free_percent = round((free_mb / 512.0) * 100, 1)
+                        used_storage = stats_dict.get("used_storage", "0.0 MB")
+                        free_storage = stats_dict.get("free_storage", "2.0 GB")
                     except Exception as e:
                         print(f"Failed to fetch live stats: {e}")
                 
@@ -686,9 +707,8 @@ class DummyWebServer(SimpleHTTPRequestHandler):
                     ad_link=ad_link,
                     total_files=f"{total_files:,}",
                     total_users=f"{total_users:,}",
-                    used_mb=used_mb,
-                    free_mb=free_mb,
-                    free_percent=free_percent
+                    used_storage=used_storage,
+                    free_storage=free_storage
                 )
             
             self.send_response(200)
