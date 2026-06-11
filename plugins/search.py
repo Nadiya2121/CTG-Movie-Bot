@@ -219,13 +219,18 @@ async def main_handler(client: Client, message: Message):
                             cleaned_name = clean_movie_title(raw_name)
                             file_size = round(file_data["file_size"] / (1024 * 1024), 2)
                             
+                            # [প্রিমিয়াম ব্র্যান্ডেড ওয়াটারমার্ক ক্যাপশন]
                             caption_text = (
-                                f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
-                                f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
-                                f"📢 **চ্যানেল ও গ্রুপ লিংকসমূহ নিচে দেওয়া হলো:**\n"
-                                f"👉 আমাদের সাথে ব্যাকআপ চ্যানেলে এবং গ্রুপে যুক্ত থাকুন।\n\n"
-                                f"⚠️ **নিরাপত্তা সতর্কবার্তা:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর স্বয়ংক্রিয়ভাবে মুছে যাবে। দয়া করে এর মধ্যেই আপনার সেভড মেসেজে ফাইলটি ফরওয়ার্ড করে রাখুন।"
+                                f"🎬 **ꜰɪʟᴇ ɴᴀᴍᴇ:** `{cleaned_name}`\n"
+                                f"💾 **ꜱɪᴢᴇ:** `{file_size} MB`\n"
+                                f"⚡️ **ꜱᴘᴇᴇᴅ:** `Unlimited (Ultra Fast CDN)`\n\n"
+                                f"🍿 **ᴊᴏɪɴ ᴏᴜʀ ᴍᴏᴠɪᴇ ɴᴇᴛᴡᴏʀᴋ:**\n"
+                                f"├─ 🍿 [🍿 All Movies Channel]({config.CHANNEL_LINK_1})\n"
+                                f"├─ 📢 [📢 Backup Channel]({config.CHANNEL_LINK_2})\n"
+                                f"└─ 💬 [💬 Movie Request Group]({config.GROUP_LINK})\n\n"
+                                f"👨‍💻 *Power and Branded by CTG Network Team*\n\n"
+                                f"⚠️ **ꜱᴇᴄᴜʀɪᴛʏ ᴀʟᴇʀᴛ:**\n"
+                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর চ্যাট থেকে স্বয়ংক্রিয়ভাবে মুছে যাবে। তাই দ্রুত ফাইলটি আপনার **Saved Messages**-এ ফরোয়ার্ড করে রাখুন।"
                             )
                             
                             bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
@@ -243,10 +248,22 @@ async def main_handler(client: Client, message: Message):
                                 ]
                             ]
                             
+                            # ফাইলের এক্সটেনশন ডিটেক্ট করে রিনেম করার লজিক
+                            ext = ".mkv"
+                            if raw_name.lower().endswith(".mp4"):
+                                ext = ".mp4"
+                            elif raw_name.lower().endswith(".zip"):
+                                ext = ".zip"
+                            elif raw_name.lower().endswith(".pdf"):
+                                ext = ".pdf"
+                                
+                            safe_file_name = f"{cleaned_name}{ext}"
+                            
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
                                 caption=caption_text,
+                                file_name=safe_file_name, # ফ্লাইতে ফাইল রিনেম হচ্ছে
                                 reply_markup=InlineKeyboardMarkup(promo_buttons)
                             )
                             asyncio.create_task(auto_delete_file(sent_file))
@@ -593,7 +610,7 @@ async def send_group_results(message_or_query, results, query, page=0, searcher_
             callback_data=f"gfile|{db_id}|{searcher_id}"
         )])
 
-    # ৬৪-বাইট লিমিট সুরক্ষায় কুয়েরি ট্রাঙ্কেট
+    # 六৪-বাইট লিমিট সুরক্ষায় কুয়েরি ট্রাঙ্কেট
     safe_query = query[:30].strip()
 
     nav_buttons = []
