@@ -8,13 +8,13 @@ from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from pyrogram.enums import ChatType
 from pyrogram.errors import UserNotParticipant, MessageNotModified
-# database থেকে add_group ইম্পোর্ট করা হয়েছে
+# database থেকে প্রয়োজনীয় ফাংশন ইম্পোর্ট করা হয়েছে
 from database import search_db, get_file_by_db_id, add_user, save_movie_request, is_premium_user, add_group
 import config
 
 FILES_PER_PAGE = 5
 
-# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (মুভির নাম ঠিক রেখে প্রমোশন লিংক ও ফালতু ফাইল এক্সটেনশন মুছে দেবে) ---
+# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন ---
 def clean_movie_title(name: str) -> str:
     if not name or not isinstance(name, str):
         return "Movie File"
@@ -23,14 +23,14 @@ def clean_movie_title(name: str) -> str:
     name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
     name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
     
-    # ২. ডোমেইন লিংক ডিলিট
+    # ২. ডেমেইন লিংক ডিলিট
     domain_extensions = "com|org|net|xyz|club|co|tv|link|info|me|cc|site|space|click|in|online|icu"
     name = re.sub(r'\b[a-zA-Z0-9-]+\.(' + domain_extensions + r')\b', '', name, flags=re.IGNORECASE)
     
     # ৩. মুভি ফাইল এক্সটেনশন ডিলিট
     name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
     
-    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইфেন স্পেস দিয়ে প্রতিস্থাপন
+    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
     name = name.replace(".", " ").replace("_", " ").replace("-", " ")
     
     # অতিরিক্ত ডাবল স্পেস ক্লিন করা
@@ -68,10 +68,11 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
+# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার (ডায়নামিক মাল্টি-ডিবি সচল করা হলো) ---
 async def get_close_match_from_db(query: str):
     try:
-        from database import files_col1, files_col2
+        # database থেকে ডায়নামিক লিস্ট file_cols ইম্পোর্ট করা হলো
+        from database import file_cols
         
         # ৩ অক্ষরের চেয়ে বড় শব্দগুলো আলাদা করা
         clean_q = query.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
@@ -84,24 +85,18 @@ async def get_close_match_from_db(query: str):
         # ডাইনামিক $or ফিল্টার
         query_filter = {"$or": [{"file_name": {"$regex": re.escape(w), "$options": "i"}} for w in words]}
         
-        # ১ম ডাটাবেজ থেকে ক্যান্ডিডেট মুভি আনা
-        cursor = files_col1.find(query_filter, {"file_name": 1}).limit(1000)
-        async for doc in cursor:
-            fname = doc.get("file_name")
-            if fname:
-                cleaned = clean_movie_title(fname)
-                normalized = cleaned.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
-                name_map[normalized] = cleaned
-                
-        # ২য় ডাটাবেজ সচল থাকলে
-        if config.MULTIPLE_DB and files_col2:
-            cursor2 = files_col2.find(query_filter, {"file_name": 1}).limit(1000)
-            async for doc in cursor2:
-                fname = doc.get("file_name")
-                if fname:
-                    cleaned = clean_movie_title(fname)
-                    normalized = cleaned.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
-                    name_map[normalized] = cleaned
+        # আপনার যুক্ত করা প্রতিটি ফাইল ডাটাবেজ থেকে ডায়নামিকভাবে ক্যান্ডিডেট মুভি স্ক্যান করা হবে
+        for col in file_cols:
+            try:
+                cursor = col.find(query_filter, {"file_name": 1}).limit(500) # লিমিট কিছুটা কমিয়ে স্পিড অপ্টিমাইজ করা হয়েছে
+                async for doc in cursor:
+                    fname = doc.get("file_name")
+                    if fname:
+                        cleaned = clean_movie_title(fname)
+                        normalized = cleaned.lower().replace(".", " ").replace("-", " ").replace("_", " ").strip()
+                        name_map[normalized] = cleaned
+            except Exception as e:
+                print(f"Error scanning close match in collection: {e}")
         
         if not name_map:
             return None
@@ -225,7 +220,6 @@ async def main_handler(client: Client, message: Message):
                             cleaned_name = clean_movie_title(raw_name)
                             file_size = round(file_data["file_size"] / (1024 * 1024), 2)
                             
-                            # পূর্বের সুরক্ষিত নোটিশটি বজায় রাখা হয়েছে
                             caption_text = (
                                 f"🎬 **ফাইলের নাম:** `{cleaned_name}`\n"
                                 f"💾 **ফাইলের সাইজ:** `{file_size} MB`\n\n"
@@ -238,10 +232,8 @@ async def main_handler(client: Client, message: Message):
                             bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
                             share_text = f"🍿 Get '{cleaned_name}' movie instantly from this bot!"
                             encoded_share_text = urllib.parse.quote(share_text)
-                            # ডায়নামিক শেয়ারিং লিংক জেনারেট করা হচ্ছে
                             share_url = f"https://t.me/share/url?url=https://t.me/{bot_username}?start=get_{file_db_id}&text={encoded_share_text}"
                             
-                            # রেফারেন্স অনুযায়ী নতুন এবং পরিচ্ছন্ন বাটন লেআউট
                             promo_buttons = [
                                 [
                                     InlineKeyboardButton("📢 Channel ↗️", url=config.CHANNEL_LINK_2),
@@ -275,7 +267,6 @@ async def main_handler(client: Client, message: Message):
                         file_name = clean_movie_title(file_data["file_name"])
                         raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
                         
-                        # এখানেও user_id সহ ম্যাপ করা হলো (গ্রুপ থেকে এলেও যাতে প্রিমিয়াম কাজ করে)
                         web_app_url = f"https://{raw_url}/download?id={file_db_id}&user_id={user_id}"
                         
                         buttons = [
@@ -294,13 +285,12 @@ async def main_handler(client: Client, message: Message):
                         await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
                     return
 
-            # সাধারণ স্টার্ট কমান্ড (নতুন আল্ট্রা-প্রিমিয়াম নিওন লেআউট)
+            # সাধারণ স্টার্ট কমান্ড
             try:
                 await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
             except:
                 pass
 
-            # রেফারেন্স অনুযায়ী নতুন এবং পরিমার্জিত স্টার্ট টেক্সট
             welcome_text = (
                 f"👋 **Hey {message.from_user.mention}** 🍿\n\n"
                 f"I Am **CTG Movie Search Bot (Tier-1 Premium Edition)**\n"
@@ -317,9 +307,8 @@ async def main_handler(client: Client, message: Message):
             )
 
             bot_username = getattr(config, "BOT_USERNAME", "bot")
-            dev_link = getattr(config, "DEVELOPER_LINK", "https://t.me/your_telegram_username") # config.py তে DEVELOPER_LINK না থাকলে এই ডিফল্ট লিংকটি কাজ করবে
+            dev_link = getattr(config, "DEVELOPER_LINK", "https://t.me/your_telegram_username")
 
-            # রেফারেন্স ইমেজ অনুযায়ী নতুন ৩-স্তরবিশিষ্ট সুন্দর বাটন লেআউট এবং ৪র্থ স্তরে ডেভলপার বাটন
             start_buttons = [
                 [
                     InlineKeyboardButton("➕ Add Me To Your Groups ➕", url=f"https://t.me/{bot_username}?startgroup=true")
@@ -397,7 +386,6 @@ async def main_handler(client: Client, message: Message):
             )
             await asyncio.sleep(1.5) 
             
-            # সাজেস্টেড নাম দিয়ে অটো-সার্চ
             corrected_results, _ = await advanced_search_db(closest_match)
             if corrected_results:
                 await search_msg.delete()
@@ -529,7 +517,6 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
     if raw_url.endswith("/"):
         raw_url = raw_url[:-1]
     
-    # প্রিমিয়াম ভেরিফিকেশন চেক করার জন্য ইউজার আইডি বের করা হচ্ছে
     user_id = message_or_query.from_user.id if isinstance(message_or_query, Message) else message_or_query.from_user.id
 
     buttons = []
@@ -540,7 +527,6 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
         
-        # ইউজার ফ্রি বা প্রিমিয়াম—উভয়ের জন্যই একই বাটন ওপেন হবে, তবে ইউজার আইডি পাস হবে
         web_app_url = f"https://{raw_url}/download?id={db_id}&user_id={user_id}"
         buttons.append([InlineKeyboardButton(
             text=f"🎬 {file_name} [{file_size} MB]",
@@ -687,7 +673,7 @@ async def group_file_click_handler(client: Client, callback_query):
         url=f"https://t.me/{config.BOT_USERNAME}?start={file_db_id}"
     )
 
-# ৪. প্রিমিয়াম পপ-আপ অ্যালার্ট (সম্পূর্ণ নতুন এবং আকর্ষণীয় প্রফেশনাল ডিজাইন)
+# ৪. প্রিমিয়াম পপ-আপ অ্যালার্ট
 @Client.on_callback_query(filters.regex(r"^premium_info$"))
 async def premium_info_click_handler(client: Client, callback_query):
     premium_text = (
@@ -710,7 +696,7 @@ async def premium_info_click_handler(client: Client, callback_query):
         pass
     await callback_query.answer()
 
-# ৪.১ হোম মেনুতে ফিরে যাওয়ার ব্যাক বাটন হ্যান্ডলার (নতুন সংশোধিত ডিজাইন)
+# ৪.১ হোম মেনুতে ফিরে যাওয়ার ব্যাক বাটন হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^start_back$"))
 async def start_back_handler(client: Client, callback_query):
     welcome_text = (
@@ -752,7 +738,7 @@ async def start_back_handler(client: Client, callback_query):
         pass
     await callback_query.answer()
 
-# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (Fuzzy "Did You Mean" Auto-Search)
+# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^tsearch\|"))
 async def tsearch_click_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
@@ -765,25 +751,45 @@ async def tsearch_click_handler(client: Client, callback_query):
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
 
 #6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
+@Client.on_message(filters.command("request") | filters.regex(r"^req\|")) # এখানে command হ্যান্ডলার ফিল্টারটি সঠিক বাটন রেসপন্স নিশ্চিত করতে কাস্টম করা হলো
 @Client.on_callback_query(filters.regex(r"^req\|"))
 async def request_movie_handler(client: Client, callback_query):
-    query = callback_query.data.split("|")[1]
-    user_id = callback_query.from_user.id
-    username = f"@{callback_query.from_user.username}" if callback_query.from_user.username else "নেই"
-    first_name = callback_query.from_user.first_name or "ইউজার"
+    # কলব্যাক কুয়েরি অথবা মেসেজ অবজেক্ট হ্যান্ডলিং
+    is_callback = not isinstance(callback_query, Message)
+    
+    if is_callback:
+        query = callback_query.data.split("|")[1]
+        user = callback_query.from_user
+        msg_ctx = callback_query.message
+    else:
+        # মেসেজ কমান্ড হলে
+        if len(callback_query.command) < 2:
+            await callback_query.reply_text("⚠️ **ব্যবহার বিধি:** `/request [মুভির নাম]`")
+            return
+        query = " ".join(callback_query.command[1:])
+        user = callback_query.from_user
+        msg_ctx = callback_query
+
+    user_id = user.id
+    username = f"@{user.username}" if user.username else "নেই"
+    first_name = user.first_name or "ইউজার"
     
     from database import save_movie_request
     saved = await save_movie_request(user_id, query)
     
     if saved:
-        await callback_query.answer("✅ আপনার রিকোয়েস্টটি এডমিনের কাছে পাঠানো হয়েছে!", show_alert=True)
-        await callback_query.message.edit_text(
+        success_text = (
             f"✅ **মুভি রিকোয়েস্ট পাঠানো হয়েছে!**\n\n"
             f"🎬 মুভির নাম: `{query}`\n\n"
             f"👉 এডমিন মুভিটি আপলোড করার সাথে সাথে আপনার ইনবক্সে নোটিফিকেশন চলে আসবে।"
         )
+        if is_callback:
+            await callback_query.answer("✅ আপনার রিকোয়েস্টটি এডমিনের কাছে পাঠানো হয়েছে!", show_alert=True)
+            await msg_ctx.edit_text(success_text)
+        else:
+            await msg_ctx.reply_text(success_text)
         
-        # এডমিন চ্যানেলে পাঠানোর জন্য মেসেজ ফরম্যাট
+        # এডমিন লগ চ্যানেলে রিকোয়েস্ট পাঠানো
         log_text = (
             f"🍿 **নতুন মুভি রিকোয়েস্ট এসেছে!**\n\n"
             f"👤 **ইউজার:** [{first_name}](tg://user?id={user_id})\n"
@@ -803,7 +809,6 @@ async def request_movie_handler(client: Client, callback_query):
             ]
         ]
         
-        # config.LOG_CHANNEL এ মেসেজ পাঠানো হচ্ছে
         if hasattr(config, "LOG_CHANNEL") and config.LOG_CHANNEL:
             try:
                 await client.send_message(
@@ -814,16 +819,19 @@ async def request_movie_handler(client: Client, callback_query):
             except Exception as e:
                 print(f"Failed to send request to admin channel: {e}")
     else:
-        await callback_query.answer("⚠️ আপনি ইতিমধ্যেই এই মুভিটির রিকোয়েস্ট পাঠিয়েছেন!", show_alert=True)
+        err_msg = "⚠️ আপনি ইতিমধ্যেই এই মুভিটির রিকোয়েস্ট পাঠিয়েছেন!"
+        if is_callback:
+            await callback_query.answer(err_msg, show_alert=True)
+        else:
+            await msg_ctx.reply_text(err_msg)
 
-# ৭. এডমিনদের বাটনে ক্লিক হ্যান্ডলার (এডমিন চ্যানেল অ্যাকশন)
+# ৭. এডমিনদের বাটনে ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^admin_req\|"))
 async def admin_request_action_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
     action = data[1]
     target_user_id = int(data[2])
     
-    # এডমিন চ্যানেলের টেক্সট থেকে মুভির নামটি পার্স করা হচ্ছে (ব্যাকটিক ছাড়া)
     msg_text = callback_query.message.text
     movie_name = "Requested Movie"
     match = re.search(r"🎬\s*মুভি:\s*(.+)", msg_text)
@@ -840,8 +848,6 @@ async def admin_request_action_handler(client: Client, callback_query):
         try:
             await client.send_message(chat_id=target_user_id, text=user_msg)
             await callback_query.answer("✅ ইউজারকে রিলিজ না হওয়ার বিষয়টি জানানো হয়েছে।", show_alert=True)
-            
-            # এডমিন মেসেজ আপডেট
             await callback_query.message.edit_text(
                 f"{msg_text}\n\n"
                 f"🔴 **স্ট্যাটাস:** রিলিজ হয়নি (উত্তরদাতা: {callback_query.from_user.mention})"
@@ -859,8 +865,6 @@ async def admin_request_action_handler(client: Client, callback_query):
         try:
             await client.send_message(chat_id=target_user_id, text=user_msg)
             await callback_query.answer("✅ ইউজারকে বানান ভুলের বিষয়টি জানানো হয়েছে।", show_alert=True)
-            
-            # এডমিন মেসেজ আপডেট
             await callback_query.message.edit_text(
                 f"{msg_text}\n\n"
                 f"🟡 **স্ট্যাটাস:** বানান ভুল (উত্তরদাতা: {callback_query.from_user.mention})"
@@ -878,8 +882,6 @@ async def admin_request_action_handler(client: Client, callback_query):
         try:
             await client.send_message(chat_id=target_user_id, text=user_msg)
             await callback_query.answer("✅ ইউজারকে মুভি আপলোডের বিষয়টি জানানো হয়েছে।", show_alert=True)
-            
-            # এডমিন মেসেজ আপডেট
             await callback_query.message.edit_text(
                 f"{msg_text}\n\n"
                 f"🟢 **স্ট্যাটাস:** আপলোড সম্পন্ন (উত্তরদাতা: {callback_query.from_user.mention})"
@@ -888,7 +890,6 @@ async def admin_request_action_handler(client: Client, callback_query):
             await callback_query.answer(f"❌ ইউজারকে মেসেজ পাঠানো যায়নি: {str(e)}", show_alert=True)
             
     elif action == "custom":
-        # কাস্টম উত্তরের জন্য এডমিনকে মেসেজ রিপ্লাই করতে বলা হচ্ছে
         await callback_query.answer("✍️ কাস্টম উত্তর পাঠাতে এই মেসেজের 'Reply' তে আপনার টেক্সটটি লিখুন।", show_alert=True)
         try:
             await callback_query.message.edit_text(
