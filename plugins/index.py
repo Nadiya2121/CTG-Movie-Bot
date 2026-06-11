@@ -4,8 +4,8 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 import config
-# database থেকে get_active_files_collection ইম্পোর্ট করা হয়েছে (এরর ফিক্স)
-from database import save_file, get_active_files_collection
+# database থেকে প্রয়োজনীয় ফাংশন ও কালেকশন ইম্পোর্ট করা হয়েছে
+from database import save_file, get_active_files_collection, requests_col
 
 INDEX_STATES = {}
 
@@ -18,9 +18,7 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         return
         
     try:
-        from database import db1
-        requests_col = db1["requests"]
-        
+        # সরাসরি ইম্পোর্ট করা requests_col ব্যবহার করা হচ্ছে (ডাবল-ডিবি সেফটি ফিক্স)
         cursor = requests_col.find({"status": "pending"})
         async for req in cursor:
             req_query = req["query"].lower().strip()
@@ -56,28 +54,26 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         print(f"Request notify error: {e}")
 
 
-# মেইন চ্যানেলের অটো-ইনডেক্সিং (সেফটি সহ)
+# মেইন চ্যানেলের অটো-ইনডেক্সিং (অপ্টিমাইজড ও ডাবল-ডিবি সেফ)
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_index(client: Client, message: Message):
     file = message.document or message.video
-    
     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
     
-    saved = await save_file(
+    # save_file এখন সরাসরি ইউনিক অবজেক্ট আইডি (string) রিটার্ন করবে
+    saved_id = await save_file(
         file_name=raw_fname,
         file_size=file.file_size,
         file_id=file.file_id,
         chat_id=message.chat.id,
         message_id=message.id
     )
-    if saved:
-        from database import files_col1
-        doc = await files_col1.find_one({"file_id": file.file_id})
-        if doc:
-            asyncio.create_task(check_and_notify_requests(client, raw_fname, str(doc["_id"])))
+    if saved_id and isinstance(saved_id, str):
+        # অতিরিক্ত ডাটাবেজ সার্চ ছাড়াই সরাসরি নোটিফিকেশন টাস্ক রান হবে
+        asyncio.create_task(check_and_notify_requests(client, raw_fname, saved_id))
 
 
-# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch Method - সেফটি সহ)
+# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch Method)
 @Client.on_message(filters.command("index") & is_admin & filters.private)
 async def index_start_cmd(client: Client, message: Message):
     INDEX_STATES[message.from_user.id] = True
@@ -160,9 +156,11 @@ async def process_index_forward(client: Client, message: Message):
                         skipped_count += 1
                 
                 if to_insert:
+                    # মঙ্গোডিবি ব্যাচ ইনসার্ট
                     await active_col.insert_many(to_insert)
                     saved_count += len(to_insert)
                     
+                    # ইনসার্ট হওয়ার পর পাইমঙ্গো ডিকশনারিতে স্বয়ংক্রিয়ভাবে '_id' যোগ করে দেয়
                     for doc in to_insert:
                         doc_id = str(doc["_id"])
                         asyncio.create_task(check_and_notify_requests(client, doc["file_name"], doc_id))
