@@ -85,7 +85,7 @@ async def add_group(chat_id, chat_title):
         })
 
 # ==========================================
-#  ৪. ফাইল ইনডেক্সিং এবং ডুপ্লিকেট প্রটেকশন
+#  ৪. ফাইল ইনডেক্সিং এবং ডুপ্লিকেট প্রটেকশন (অপ্টিমাইজড আপডেট)
 # ==========================================
 
 async def save_file(file_name, file_size, file_id, chat_id, message_id):
@@ -108,7 +108,7 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
             duplicate = True
             break
     
-    # ডুপ্লিকেট না থাকলে বর্তমান সচল (Active) ডাটাবেজে সেভ করা হবে
+    # ডুপ্লিকেট না থাকলে বর্তমান সচল (Active) ডাটাবেজে সেভ করা হবে এবং ইউনিক অবজেক্ট আইডি রিটার্ন করবে
     if not duplicate:
         file_data = {
             "file_name": file_name,
@@ -117,8 +117,9 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
             "chat_id": chat_id,
             "message_id": message_id
         }
-        await active_col.insert_one(file_data)
-        return True
+        # [ছোট্ট আপডেট]: সেভ হওয়ার পর ইনসার্টেড ইউনিক _id রিটার্ন করবে যা নোটিফিকেশন সিস্টেম ব্যবহার করবে
+        result = await active_col.insert_one(file_data)
+        return str(result.inserted_id)
         
     return False
 
