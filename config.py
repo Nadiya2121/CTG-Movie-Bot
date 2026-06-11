@@ -30,7 +30,7 @@ USER_DATABASE_URI = "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.
 FILE_DATABASE_URIS = [
     "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ১ম ফাইল ডিবি (২ লাখ মুভি)
     "mongodb+srv://xanoye1655:xanoye1655@cluster0.toknq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ২য় ফাইল ডিবি (নতুন)
-    "mongodb+srv://hewabah657:hewabah657@cluster0.k7k7y.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ৩য় ফাইল ডিবি (নতুন)
+    "mongodb+srv://manogog673:manogog673@cluster0.ot1qt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ৩য় ফাইল ডিবি (নতুন)
     "mongodb+srv://hepemo5263:hepemo5263@cluster0.5vugv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # ৪র্থ ফাইল ডিবি (নতুন)
 ]
 
