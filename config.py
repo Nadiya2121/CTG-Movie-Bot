@@ -25,12 +25,13 @@ LOG_CHANNEL = -1003973741130      # আপনার রিকোয়েস্ট 
 # ১. ইউজার ডাটাবেজ (এখানে শুধুমাত্র ইউজার, গ্রুপ ও প্রিমিয়াম ডাটা সেভ থাকবে)
 USER_DATABASE_URI = "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
-# ২. ফাইল বা মুভি ডাটাবেজগুলোর তালিকা 
-# আপনি এখানে যত খুশি মঙ্গোডিবি লিংক কমা (,) দিয়ে নিচে নিচে বসাতে পারবেন।
+# ২. ফাইল বা মুভি ডাটাবেজগুলোর তালিকা (মোট ৪টি ডাটাবেজ সচল করা হলো)
+# ১মটি আপনার মূল ডাটাবেজ (যাতে ২ লাখ মুভি আছে) এবং বাকি ৩টি আপনার নতুন পাঠানো ডাটাবেজ।
 FILE_DATABASE_URIS = [
-    "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ১ম ফাইল ডিবি
-    # "mongodb+srv://your_second_db_link_here...", # ২য় ফাইল ডিবি (ভবিষ্যতে প্রয়োজন হলে হ্যাস '#' সরিয়ে লিংক বসাবেন)
-    # "mongodb+srv://your_third_db_link_here...",  # ৩য় ফাইল ডিবি
+    "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ১ম ফাইল ডিবি (২ লাখ মুভি)
+    "mongodb+srv://xanoye1655:xanoye1655@cluster0.toknq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ২য় ফাইল ডিবি (নতুন)
+    "mongodb+srv://hewabah657:hewabah657@cluster0.k7k7y.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ৩য় ফাইল ডিবি (নতুন)
+    "mongodb+srv://hepemo5263:hepemo5263@cluster0.5vugv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # ৪র্থ ফাইল ডিবি (নতুন)
 ]
 
 # ৩. প্রতিটি ফাইল ডাটাবেজের সর্বোচ্চ স্টোরেজ লিমিট (আপনার নির্দেশ অনুযায়ী ৪০০ এমবি সেট করা হয়েছে)
