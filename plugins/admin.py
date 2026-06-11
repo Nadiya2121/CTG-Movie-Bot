@@ -52,7 +52,7 @@ def get_readable_time(seconds: int) -> str:
 # মাল্টিপল এডমিন ফিল্টার
 is_admin = filters.create(lambda _, __, message: message.from_user and message.from_user.id in config.ADMINS)
 
-# প্রফেশনাল আরজিবি গ্লোয়িং থিমড লাইভ স্ট্যাটাস স্ক্রিন (হুবহু স্ক্রিনশটের মতো)
+# প্রফেশনাল লাইভ স্ট্যাটাস স্ক্রিন (আপনার নতুন ডিজাইন ও রিকোয়ারমেন্টের সমন্বয়ে)
 @Client.on_message(filters.command("stats") & is_admin)
 async def stats_cmd(client: Client, message: Message):
     # ডাটাবেজ থেকে ডিটেইলড ডাটা সংগ্রহ
@@ -64,28 +64,20 @@ async def stats_cmd(client: Client, message: Message):
     cpu_usage = psutil.cpu_percent()
     
     stats_text = (
-        f"╭────[ 🗃 ᴅᴀᴛᴀʙᴀsᴇ 1 🗃 ] ────⍟\n"
+        f"╭────[ 📊 ꜱʏꜱᴛᴇᴍ sᴛᴀᴛᴜs 📊 ] ────⍟\n"
         f"│\n"
-        f"├⋟ ᴀʟʟ ᴜsᴇʀs ⋟ `{data['total_users']}`\n"
-        f"├⋟ ᴀʟʟ ɢʀᴏᴜᴘs ⋟ `{data['total_groups']}`\n"
-        f"├⋟ ᴘʀᴇᴍɪᴜᴍ ᴜꜱᴇʀꜱ ⋟ `{data['premium_users']}`\n"
-        f"├⋟ ᴀʟʟ ꜰɪʟᴇs ⋟ `{data['db1_files']}`\n"
-        f"├⋟ ᴜsᴇᴅ sᴛᴏʀᴀɢᴇ ⋟ `{data['db1_used']} MB`\n"
-        f"├⋟ ꜰʀᴇᴇ sᴛᴏʀᴀɢᴇ ⋟ `{data['db1_free']} MB`\n"
+        f"├ ★ 𝚃𝙾𝚃𝙰𝙻 𝙵𝙸𝙻𝙴𝚂: `{data['total_files']}`\n"
+        f"├ ★ 𝚃𝙾𝚃𝙰𝙻 𝚄𝚂𝙴𝚁𝚂: `{data['total_users']}`\n"
+        f"├ ★ 𝚃𝙾𝚃𝙰𝙻 𝙲𝙷𝙰𝚃𝚂: `{data['total_groups']}`\n"
+        f"├ ★ 𝙿𝚁𝙴𝙼𝙸𝚄𝙼 𝚄𝚂𝙴𝚁𝚂: `{data['premium_users']}`\n"
+        f"├ ★ 𝚄𝚂𝙴𝙳 𝚂𝚃𝙾𝚁𝙰𝙶𝙴: `{data['used_storage']}`\n"
+        f"├ ★ 𝙵𝚁𝙴𝙴 𝚂𝚃𝙾𝚁𝙰𝙶𝙴: `{data['free_storage']}`\n"
         f"│\n"
-        f"├────[ 🗳 ᴅᴀᴛᴀʙᴀsᴇ 2 🗳 ]────⍟\n"
-        f"│\n"
-        f"├⋟ ᴀʟʟ ꜰɪʟᴇs ⋟ `{data['db2_files']}`\n"
-        f"├⋟ ꜱɪᴢᴇ ⋟ `{data['db2_used']} MB`\n"
-        f"├⋟ ꜰʀᴇᴇ ⋟ `{data['db2_free']} MB`\n"
-        f"│\n"
-        f"├────[ 🤖 ʙᴏᴛ ᴅᴇᴛᴀɪʟs 🤖 ]────⍟\n"
+        f"├────[ ⚙️ sᴇʀᴠᴇʀ sᴘᴇᴄs ⚙️ ]────⍟\n"
         f"│\n"
         f"├⋟ ᴜᴘᴛɪᴍᴇ ⋟ `{uptime}`\n"
         f"├⋟ ʀᴀᴍ ⋟ `{ram_usage}%`\n"
         f"├⋟ ᴄᴘᴜ ⋟ `{cpu_usage}%`\n"
-        f"│\n"
-        f"├⋟ ʙᴏᴛʜ ᴅʙ ꜰɪʟᴇ'ꜱ: `{data['total_files']}`\n"
         f"│\n"
         f"╰─────────────────────⍟"
     )
