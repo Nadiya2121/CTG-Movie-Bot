@@ -68,7 +68,7 @@ async def auto_delete_group_reply(message: Message):
     except:
         pass
 
-# --- মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার ---
+# --- 🍿 মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার 🍿 ---
 async def get_close_match_from_db(query: str):
     try:
         from database import file_cols
@@ -222,12 +222,12 @@ async def main_handler(client: Client, message: Message):
                             # [প্রিমিয়াম ব্র্যান্ডেড ওয়াটারমার্ক ক্যাপশন]
                             caption_text = (
                                 f"🎬 **ꜰɪʟᴇ ɴᴀᴍᴇ:** `{cleaned_name}`\n"
-                                f"💾 **ꜱɪᴢᴇ:** `{file_size} MB`\n"
+                                f"💾 ** provide ꜱɪᴢᴇ:** `{file_size} MB`\n"
                                 f"⚡️ **ꜱᴘᴇᴇᴅ:** `Unlimited (Ultra Fast CDN)`\n\n"
                                 f"🍿 **ᴊᴏɪɴ ᴏᴜʀ ᴍᴏᴠɪᴇ ɴᴇᴛᴡᴏʀᴋ:**\n"
-                                f"├─ 🍿 [🍿 All Movies Channel]({config.CHANNEL_LINK_1})\n"
-                                f"├─ 📢 [📢 Backup Channel]({config.CHANNEL_LINK_2})\n"
-                                f"└─ 💬 [💬 Movie Request Group]({config.GROUP_LINK})\n\n"
+                                f"├─ 🍿 [All Movies Channel]({config.CHANNEL_LINK_1})\n"
+                                f"├─ 📢 [Backup Channel]({config.CHANNEL_LINK_2})\n"
+                                f"└─ 💬 [Movie Request Group]({config.GROUP_LINK})\n\n"
                                 f"👨‍💻 *Power and Branded by CTG Network Team*\n\n"
                                 f"⚠️ **ꜱᴇᴄᴜʀɪᴛʏ ᴀʟᴇʀᴛ:**\n"
                                 f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর চ্যাট থেকে স্বয়ংক্রিয়ভাবে মুছে যাবে। তাই দ্রুত ফাইলটি আপনার **Saved Messages**-এ ফরোয়ার্ড করে রাখুন।"
@@ -248,22 +248,11 @@ async def main_handler(client: Client, message: Message):
                                 ]
                             ]
                             
-                            # ফাইলের আসল এক্সটেনশন ডিটেক্ট করে নতুন নামে ডেলিভারি দেওয়ার লজিক
-                            ext = ".mkv"
-                            if raw_name.lower().endswith(".mp4"):
-                                ext = ".mp4"
-                            elif raw_name.lower().endswith(".zip"):
-                                ext = ".zip"
-                            elif raw_name.lower().endswith(".pdf"):
-                                ext = ".pdf"
-                                
-                            safe_file_name = f"{cleaned_name}{ext}"
-                            
+                            # [সংশোধন]: unexpected keyword 'file_name' এরর দূর করতে প্যারামিটারটি রিমুভ করা হলো
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
                                 caption=caption_text,
-                                file_name=safe_file_name, # ফ্লাইতে ফাইল রিনেম করে ডেলিভারি
                                 reply_markup=InlineKeyboardMarkup(promo_buttons)
                             )
                             asyncio.create_task(auto_delete_file(sent_file))
@@ -699,7 +688,7 @@ async def group_file_click_handler(client: Client, callback_query):
 @Client.on_callback_query(filters.regex(r"^premium_info$"))
 async def premium_info_click_handler(client: Client, callback_query):
     premium_text = (
-        "👑 **𝗖𝗧𝗚 𝗠𝗢𝗩𝗜𝗘 𝗣𝗥𝗘𝗠𝗜𝗨𝗠 𝗠𝗘𝗠𝗕𝗘𝗥𝗦𝗛𝗜𝗣** 👑\n\n"
+        "👑 **𝗖𝗧𝗚 𝗠𝗢𝗩𝗜𝗘 𝗣𝗥𝗘𝗠𝗜𝗨𝗠 𝗠𝗘𝗠𝗕𝗘𝗥𝗦𝗛𝗜package** 👑\n\n"
         "কোনো শর্টলিংক বা বিজ্ঞাপন ছাড়াই সরাসরি ফাইল এবং আল্ট্রা-স্পিড ডাউনলোড সুবিধা পেতে আজই ভিআইপি মেম্বারশিপ গ্রহণ করুন!\n\n"
         "✨ **মেম্বারদের বিশেষ সুবিধাসমূহ:**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
