@@ -19,7 +19,7 @@ from database import (
 # বটের আপটাইম হিসাব করার জন্য স্টার্ট টাইম রেকর্ড করা হলো
 START_TIME = time.time()
 
-# আপটাইম ফরম্যাট করার প্রফেশনাল ফাংশন
+# আপটাইম বা সময় ফরম্যাট করার প্রফেশনাল ফাংশন
 def get_readable_time(seconds: int) -> str:
     count = 0
     ping_time = ""
@@ -98,27 +98,85 @@ async def clean_database_cmd(client: Client, message: Message):
     deleted_count = await delete_all_files_from_db()
     await message.reply_text(f"🛑 **ডাটাবেজ সম্পূর্ণ খালি করা হয়েছে!**\nমোট `{deleted_count}` টি ফাইল স্থায়ীভাবে মুছে ফেলা হয়েছে।")
 
+# --- প্রগতিশীল ব্রডকাস্টার (Progressive Broadcaster with Live Progress Bar) ---
 @Client.on_message(filters.command("broadcast") & is_admin)
 async def broadcast_cmd(client: Client, message: Message):
     if not message.reply_to_message:
         await message.reply_text("⚠️ **ব্যবহার বিধি:** যেকোনো মেসেজ বা পোস্টের ওপর রিপ্লাই দিয়ে লিখুন `/broadcast`")
         return
-    status_msg = await message.reply_text("📢 ব্রডকাস্ট শুরু হচ্ছে...")
+        
+    status_msg = await message.reply_text("📢 ব্রডকাস্ট শুরুর জন্য ইউজার তালিকা লোড হচ্ছে...")
     users = await get_all_users()
+    total_users = len(users)
+    
+    if total_users == 0:
+        await status_msg.edit_text("❌ ডাটাবেজে কোনো ইউজার খুঁজে পাওয়া যায়নি!")
+        return
+        
+    await status_msg.edit_text(f"📢 ব্রডকাস্ট শুরু হচ্ছে... মোট ইউজার: `{total_users}` জন।")
+    
     success = 0
     failed = 0
+    scanned = 0
+    start_time = time.time()
+    last_edit_time = time.time()
+    
     for user_id in users:
         try:
             await message.reply_to_message.copy(chat_id=user_id)
             success += 1
-            await asyncio.sleep(0.3)
         except Exception:
             failed += 1
-    await status_msg.edit_text(
-        f"📢 **ব্রডকাস্ট সফলভাবে সম্পন্ন হয়েছে!**\n\n"
-        f"✅ সফলভাবে পাঠানো হয়েছে: `{success}` জন ইউজারকে\n"
-        f"❌ ব্যর্থ হয়েছে (বট ব্লক করেছে): `{failed}` জন ইউজার"
+        
+        scanned += 1
+        
+        # প্রতি ৫ সেকেন্ড পর পর লাইভ প্রোগ্রেস মেসেজ এডিট হবে (টেলিগ্রাম ফ্লুড লিমিট এড়াতে)
+        current_time = time.time()
+        if current_time - last_edit_time >= 5 or scanned == total_users:
+            percent = round((scanned / total_users) * 100, 1)
+            # ১০ ব্লকের প্রোগ্রেস বার
+            filled_blocks = int(percent // 10)
+            bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
+            
+            # ETA (Estimated Time of Arrival) বা আনুমানিক বাকি সময় হিসাব
+            elapsed_time = current_time - start_time
+            avg_time = elapsed_time / scanned if scanned > 0 else 0.3
+            eta_sec = int((total_users - scanned) * avg_time)
+            eta_str = get_readable_time(eta_sec) if eta_sec > 0 else "0s"
+            
+            progress_text = (
+                f"📢 **ব্রডকাস্ট চলমান রয়েছে...**\n\n"
+                f"📈 **অগ্রগতি:** `{percent}%` Completed\n"
+                f"⚙️ `[{bar}]`\n\n"
+                f"👥 মোট ইউজার: `{total_users}` জন\n"
+                f"🔎 স্ক্যানড: `{scanned}`\n"
+                f"✅ সফল: `{success}`\n"
+                f"❌ ব্যর্থ: `{failed}`\n\n"
+                f"⏱ আনুমানিক বাকি সময়: `{eta_str}`"
+            )
+            
+            try:
+                await status_msg.edit_text(progress_text)
+                last_edit_time = current_time
+            except Exception:
+                pass
+        
+        # টেলিগ্রাম এপিআই রেট লিমিট প্রটেকশন
+        await asyncio.sleep(0.3)
+        
+    # চূড়ান্ত বা ফাইনাল রিপোর্ট
+    total_time = get_readable_time(int(time.time() - start_time))
+    final_text = (
+        f"📢 **ব্রডকাস্ট সফলভাবে সম্পন্ন হয়েছে (Turbo Broadcast Finish)!**\n\n"
+        f"📊 **চূড়ান্ত রিপোর্ট:**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👥 মোট ইউজার: `{total_users}` জন\n"
+        f"✅ সফলভাবে পাঠানো হয়েছে: `{success}` জনকে\n"
+        f"❌ ব্যর্থ হয়েছে (বট ব্লকড): `{failed}` জনের কাছে\n"
+        f"⏱ মোট সময় লেগেছে: `{total_time}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━"
     )
+    await status_msg.edit_text(final_text)
 
 # --- প্রিমিয়াম নিয়ন্ত্রণ কমান্ডসমূহ ---
 @Client.on_message(filters.command("add_premium") & is_admin)
