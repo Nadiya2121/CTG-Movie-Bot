@@ -85,12 +85,14 @@ async def add_group(chat_id, chat_title):
         })
 
 # ==========================================
-#  ৪. ফাইল ইনডেক্সিং এবং ডুপ্লিকেট প্রটেকশন (অপ্টিমাইজড আপডেট)
+#  ৪. ফাইল ইনডেক্সিং এবং ডুপ্লিকেট প্রটেকশন (সংশোধিত)
 # ==========================================
 
 async def save_file(file_name, file_size, file_id, chat_id, message_id):
     active_col = await get_active_files_collection()
-    if not active_col:
+    
+    # [সংশোধন]: কালেকশন অবজেক্টকে boolean চেক না করে সরাসরি "is None" দিয়ে তুলনা করা হলো
+    if active_col is None:
         return False
     
     file_name = file_name if file_name else f"Video_File_{file_size}"
@@ -117,7 +119,6 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
             "chat_id": chat_id,
             "message_id": message_id
         }
-        # [ছোট্ট আপডেট]: সেভ হওয়ার পর ইনসার্টেড ইউনিক _id রিটার্ন করবে যা নোটিফিকেশন সিস্টেম ব্যবহার করবে
         result = await active_col.insert_one(file_data)
         return str(result.inserted_id)
         
@@ -178,18 +179,28 @@ async def get_file_by_db_id(db_id):
     return None
 
 # ==========================================
-#  ৬. মেমরি ও প্রফেশনাল স্ট্যাটাস মেকানিজম
+#  ৬. মেমরি ও প্রফেশনাল স্ট্যাটাস মেকানিজম (অপ্টিমাইজড)
 # ==========================================
 
 async def get_detailed_stats():
     # সবগুলো ফাইল ডাটাবেজ থেকে মোট ফাইলের সংখ্যা বের করা
     total_files = 0
-    for col in file_cols:
-        total_files += await col.estimated_document_count()
+    for idx, col in enumerate(file_cols):
+        try:
+            count = await col.estimated_document_count()
+            total_files += count
+        except Exception as e:
+            print(f"⚠️ ডাটাবেজ {idx+1} থেকে ফাইল গণনা করতে ব্যর্থ (ডিবি ডাউন থাকতে পারে): {e}")
         
-    total_users = await users_col.estimated_document_count()
-    premium_users = await users_col.count_documents({"is_premium": True})
-    total_groups = await groups_col.estimated_document_count()
+    total_users = 0
+    premium_users = 0
+    total_groups = 0
+    try:
+        total_users = await users_col.estimated_document_count()
+        premium_users = await users_col.count_documents({"is_premium": True})
+        total_groups = await groups_col.estimated_document_count()
+    except Exception as e:
+        print(f"⚠️ ইউজার বা গ্রুপ ডাটা গণনা করতে ব্যর্থ: {e}")
     
     # ব্যবহৃত মোট স্টোরেজ হিসাব করা (ইউজার ডিবি + সব ফাইল ডিবি)
     total_used_bytes = 0
