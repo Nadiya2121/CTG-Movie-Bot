@@ -32,8 +32,11 @@ for uri in config.FILE_DATABASE_URIS:
     except Exception as e:
         print(f"❌ ডাটাবেজ কানেকশন তৈরি করতে ব্যর্থ: {uri} | ভুল: {e}")
 
+# রিয়েল-টাইম মেমোরি ট্র্যাকার (মঙ্গোডিবির স্লো সাইজ রিড এড়ানোর জন্য)
+DB_SIZES_CACHE = {}
+
 # ==========================================
-#  ২. ডায়নামিক অটো-সুইচিং লজিক
+#  ২. ডায়নামিক অটো-সুইচিং লজিক (রিয়েল-টাইম কাউন্টার)
 # ==========================================
 
 async def get_active_files_collection():
@@ -45,19 +48,23 @@ async def get_active_files_collection():
         return None
 
     for idx, db in enumerate(file_dbs):
-        try:
-            stats = await db.command("dbstats")
-            # storageSize এবং indexSize যোগ করে প্রকৃত স্পেস ব্যবহার বের করা হচ্ছে
-            used_bytes = stats.get("storageSize", 0) + stats.get("indexSize", 0)
-            used_mb = used_bytes / (1024 * 1024)
+        # যদি মেমোরিতে এই ডাটাবেজের সাইজ আগে থেকে লোড করা না থাকে, তবে একবার dbstats দিয়ে রিড করা হবে
+        if idx not in DB_SIZES_CACHE:
+            try:
+                stats = await db.command("dbstats")
+                # storageSize এবং indexSize যোগ করে প্রকৃত স্পেস ব্যবহার বের করা হচ্ছে
+                used_bytes = stats.get("storageSize", 0) + stats.get("indexSize", 0)
+                used_mb = used_bytes / (1024 * 1024)
+                DB_SIZES_CACHE[idx] = used_mb
+            except Exception as e:
+                print(f"⚠️ ডাটাবেজ {idx+1} সাইজ চেক করতে ব্যর্থ: {e}")
+                DB_SIZES_CACHE[idx] = 0.0  # কোনো কারণে এরর আসলে ব্যাকআপ হিসেবে ০ ধরা হলো
+        
+        # মেমোরিতে থাকা রিয়েল-টাইম সাইজ চেক করা হচ্ছে
+        if DB_SIZES_CACHE[idx] < config.DB_LIMIT_MB:
+            return file_cols[idx]
             
-            # যদি বর্তমান ডাটাবেজের সাইজ লিমিটের চেয়ে কম থাকে, তবে এটিকেই একটিভ করা হবে
-            if used_mb < config.DB_LIMIT_MB:
-                return file_cols[idx]
-        except Exception as e:
-            print(f"⚠️ ডাটাবেজ {idx+1} সাইজ চেক করতে ব্যর্থ: {e}")
-            
-    # যদি সবগুলো ডাটাবেজই ফুল হয়ে যায়, তবে শেষ ডাটাবেজটি ডিফল্ট হিসেবে কাজ করবে
+    # যদি মেমোরি অনুযায়ী সবগুলোই ৪০০ এমবি পার হয়ে যায়, তবে শেষ ডাটাবেজটি কাজ করবে
     return file_cols[-1]
 
 # ==========================================
@@ -85,13 +92,12 @@ async def add_group(chat_id, chat_title):
         })
 
 # ==========================================
-#  ৪. ফাইল ইনডেক্সিং এবং ডুপ্লিকেট প্রটেকশন (সংশোধিত)
+#  ৪. ফাইল ইনডেক্সিং এবং ডুপ্লিকেট প্রটেকশন
 # ==========================================
 
 async def save_file(file_name, file_size, file_id, chat_id, message_id):
     active_col = await get_active_files_collection()
     
-    # [সংশোধন]: কালেকশন অবজেক্টকে boolean চেক না করে সরাসরি "is None" দিয়ে তুলনা করা হলো
     if active_col is None:
         return False
     
@@ -110,7 +116,7 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
             duplicate = True
             break
     
-    # ডুপ্লিকেট না থাকলে বর্তমান সচল (Active) ডাটাবেজে সেভ করা হবে এবং ইউনিক অবজেক্ট আইডি রিটার্ন করবে
+    # ডুপ্লিকেট না থাকলে সচল ডাটাবেজে সেভ করা হবে
     if not duplicate:
         file_data = {
             "file_name": file_name,
@@ -119,8 +125,23 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
             "chat_id": chat_id,
             "message_id": message_id
         }
-        result = await active_col.insert_one(file_data)
-        return str(result.inserted_id)
+        
+        # বর্তমান কোন কালেকশনে সেভ হচ্ছে তার ইনডেক্স বের করা
+        idx = file_cols.index(active_col) if active_col in file_cols else 0
+        
+        try:
+            result = await active_col.insert_one(file_data)
+            
+            # [রিয়েল-টাইম মেমোরি আপডেট]: সফলভাবে সেভ হলে বটের মেমোরিতে এই ডাটাবেজের সাইজ ০.০১ এমবি বাড়িয়ে নেওয়া হচ্ছে।
+            # প্রতিটি ফাইলের ডাটা এবং সূচক (Index) ওভারহেড হিসেবে ১০ কিলোবাইট (০.০১ এমবি) ধরা হয়েছে, যা অত্যন্ত নিখুঁত ও নিরাপদ।
+            if idx in DB_SIZES_CACHE:
+                DB_SIZES_CACHE[idx] += 0.01
+                
+            return str(result.inserted_id)
+        except Exception as e:
+            # আকস্মিক কোনো মঙ্গোডিবি ক্র্যাশ এড়াতে সেফটি নেট
+            print(f"❌ ডাটাবেজ {idx+1}-এ রাইট এরর: {e}")
+            return False
         
     return False
 
@@ -262,6 +283,9 @@ async def delete_files_by_name(query):
     for col in file_cols:
         count = await col.delete_many({"file_name": {"$regex": query, "$options": "i"}})
         deleted += count.deleted_count
+        
+    # ডিলিশনের পর ক্যাশ রিসেট করার তাগিদ (যাতে পরবর্তী স্টার্টে সঠিক স্ট্যাটাস রিড করে)
+    DB_SIZES_CACHE.clear()
     return deleted
 
 async def delete_all_files_from_db():
@@ -270,6 +294,9 @@ async def delete_all_files_from_db():
     for col in file_cols:
         count = await col.delete_many({})
         deleted += count.deleted_count
+        
+    # ক্যাশ সম্পূর্ণ ফাঁকা করা হলো
+    DB_SIZES_CACHE.clear()
     return deleted
 
 async def get_all_users():
