@@ -52,7 +52,7 @@ def get_readable_time(seconds: int) -> str:
 # মাল্টিপল এডমিন ফিল্টার
 is_admin = filters.create(lambda _, __, message: message.from_user and message.from_user.id in config.ADMINS)
 
-# প্রফেশনাল লাইভ স্ট্যাটাস স্ক্রিন (আপনার নতুন ডিজাইন ও রিকোয়ারমেন্টের সমন্বয়ে)
+# প্রফেশনাল লাইভ স্ট্যাটাস স্ক্রিন (মূল ড্যাশবোর্ড - সামগ্রিক সামারি)
 @Client.on_message(filters.command("stats") & is_admin)
 async def stats_cmd(client: Client, message: Message):
     # ডাটাবেজ থেকে ডিটেইলড ডাটা সংগ্রহ
@@ -83,6 +83,35 @@ async def stats_cmd(client: Client, message: Message):
     )
     
     await message.reply_text(stats_text)
+
+
+# সম্পূর্ণ নতুন ডেডিকেটেড কমান্ড: /db (প্রতিটি ডাটাবেজের লাইভ ডিটেইলস আলাদাভাবে দেখার জন্য)
+@Client.on_message(filters.command("db") & is_admin)
+async def db_stats_cmd(client: Client, message: Message):
+    # ডাটাবেজ থেকে ডিটেইলড ডাটা সংগ্রহ
+    data = await get_detailed_stats()
+    
+    # ডায়নামিকভাবে প্রতিটি ডাটাবেজের স্ট্যাটাস ব্লক তৈরি করা হচ্ছে
+    db_section = ""
+    for db_info in data.get("file_dbs_info", []):
+        db_section += (
+            f"├────[ 🗃 ᴅᴀᴛᴀʙᴀsᴇ {db_info['db_num']} 🗃 ]────⍟\n"
+            f"│  ├⋟ sᴛᴀᴛᴜs ⋟ `{db_info['status']}`\n"
+            f"│  ├⋟ ᴀʟʟ ғɪʟᴇs ⋟ `{db_info['files_count']}`\n"
+            f"│  ├⋟ ᴜsᴇᴅ ⋟ `{db_info['used_mb']} MB`\n"
+            f"│  └⋟ ғʀᴇᴇ ⋟ `{db_info['free_mb']} MB` (Limit: {config.DB_LIMIT_MB}MB)\n"
+            f"│\n"
+        )
+    
+    db_stats_text = (
+        f"╭────[ 🗄 ᴍᴜʟᴛɪ-ᴅʙ sᴛᴀᴛᴜs 🗄 ]────⍟\n"
+        f"│\n"
+        f"{db_section}"
+        f"╰─────────────────────⍟"
+    )
+    
+    await message.reply_text(db_stats_text)
+
 
 @Client.on_message(filters.command("delete") & is_admin)
 async def delete_cmd(client: Client, message: Message):
