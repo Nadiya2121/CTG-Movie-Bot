@@ -64,7 +64,7 @@ async def stats_cmd(client: Client, message: Message):
     cpu_usage = psutil.cpu_percent()
     
     stats_text = (
-        f"╭────[ 📊 ꜱʏꜱᴛᴇᴍ sᴛᴀᴛᴜs 📊 ] ────⍟\n"
+        f"╭────[ 📊 ⲝʏⲝᴛⲝᴍ sᴛᴀᴛᴜs 📊 ] ────⍟\n"
         f"│\n"
         f"├ ★ 𝚃𝙾𝚃𝙰𝙻 𝙵𝙸𝙻𝙴𝚂: `{data['total_files']}`\n"
         f"├ ★ 𝚃𝙾𝚃𝙰𝙻 𝚄𝚂𝙴𝚁𝚂: `{data['total_users']}`\n"
@@ -94,12 +94,20 @@ async def db_stats_cmd(client: Client, message: Message):
     # ডায়নামিকভাবে প্রতিটি ডাটাবেজের স্ট্যাটাস ব্লক তৈরি করা হচ্ছে
     db_section = ""
     for db_info in data.get("file_dbs_info", []):
+        # যদি ইউজার ডাটাবেজ আলাদা থাকে তবে স্পেশাল হেডার দেখাবে
+        if db_info['db_num'] == "USER_DEDICATED":
+            db_title = "👑 ᴜsᴇʀ ᴅᴀᴛᴀʙᴀsᴇ 👑"
+            files_label = "ᴛᴏᴛᴀʟ ᴜsᴇʀs"
+        else:
+            db_title = f"🗃 ᴅᴀᴛᴀʙᴀsᴇ {db_info['db_num']} 🗃"
+            files_label = "ᴀʟʟ ғɪʟᴇs"
+            
         db_section += (
-            f"├────[ 🗃 ᴅᴀᴛᴀʙᴀsᴇ {db_info['db_num']} 🗃 ]────⍟\n"
+            f"├────[ {db_title} ]────⍟\n"
             f"│  ├⋟ sᴛᴀᴛᴜs ⋟ `{db_info['status']}`\n"
-            f"│  ├⋟ ᴀʟʟ ғɪʟᴇs ⋟ `{db_info['files_count']}`\n"
+            f"│  ├⋟ {files_label} ⋟ `{db_info['files_count']}`\n"
             f"│  ├⋟ ᴜsᴇᴅ ⋟ `{db_info['used_mb']} MB`\n"
-            f"│  └⋟ ғʀᴇᴇ ⋟ `{db_info['free_mb']} MB` (Limit: {db_info['limit']}MB)\n" # ডায়নামিক লিমিট ফিক্স
+            f"│  └⋟ ғʀᴇᴇ ⋟ `{db_info['free_mb']} MB` (Limit: {db_info['limit']}MB)\n"
             f"│\n"
         )
     
