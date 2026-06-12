@@ -42,7 +42,7 @@ BLOCKED_DBS = set()
 
 async def get_active_files_collection():
     """
-    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনফিগ লিমিট) এর নিচে আছে,
+    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনфিগ লিমিট) এর নিচে আছে,
     সেটির কালেকশন রিটার্ন করবে। ১ম ফাইল ডাটাবেজটি (Index 0) নতুন ফাইল সেভের ক্ষেত্রে সম্পূর্ণ স্কিপ করা হবে।
     """
     if not file_cols or len(file_cols) < 2:
@@ -230,7 +230,14 @@ async def get_detailed_stats():
     # প্রতিটি ফাইল ডাটাবেজ থেকে আলাদাভাবে ডাটা সংগ্রহ
     file_dbs_info = []
     total_files = 0
-    total_used_bytes = 0  # শুরুতে মেমোরি সুরক্ষায় ০ ইনিশিয়ালাইজ করা হলো
+    total_used_bytes = 0
+    
+    # কোন ফাইল ডাটাবেজের লিঙ্কটি ইউজার ডাটাবেজ হিসেবে কনফিগারে সেট করা আছে তা অটো-ডিটেক্ট করা হচ্ছে
+    user_db_idx = -1
+    for i, uri in enumerate(config.FILE_DATABASE_URIS):
+        if uri.strip() == config.USER_DATABASE_URI.strip():
+            user_db_idx = i
+            break
     
     for idx, db in enumerate(file_dbs):
         try:
@@ -243,17 +250,26 @@ async def get_detailed_stats():
             total_used_bytes += used_bytes
             used_mb = used_bytes / (1024 * 1024)
             
-            # [উন্নত হিসাব]: ১ম ডাটাবেজের হিসাব আসল ৫১২ এমবি থেকে হবে, এবং বাকিগুলোর হিসাব config.DB_LIMIT_MB লিমিট থেকে হবে
-            if idx == 0:
-                free_mb = 512.0 - used_mb
-                limit_display = 512
-                status_str = "👑 USER DEDICATED"
+            # [ডাইনামিক হিসাব]: 
+            # যদি এই ডাটাবেজটি ইউজার ডাটাবেজ হিসেবে কনফিগার করা থাকে, তবে এটার স্ট্যাটাস "USER DB" দেখাবে
+            if idx == user_db_idx:
+                free_mb = config.DB_LIMIT_MB - used_mb
+                limit_display = config.DB_LIMIT_MB
+                status_str = "🟢 ACTIVE (👑 USER DB)" if used_mb < config.DB_LIMIT_MB else "🔴 FULL (👑 USER DB)"
+                if idx in BLOCKED_DBS:
+                    status_str = "🔴 BLOCKED (👑 USER DB)"
             else:
+                # সাধারণ ফাইল ডাটাবেজ
                 free_mb = config.DB_LIMIT_MB - used_mb
                 limit_display = config.DB_LIMIT_MB
                 status_str = "🟢 ACTIVE" if used_mb < config.DB_LIMIT_MB else "🔴 FULL"
                 if idx in BLOCKED_DBS:
                     status_str = "🔴 BLOCKED"
+                
+                # ১ম ফাইল ডাটাবেজকে আমরা যেহেতু ফাইল রাইটিং এ স্কিপ করেছি, তাই এটি "🔒 READ ONLY" দেখাবে
+                if idx == 0:
+                    status_str = "🔒 READ ONLY"
+                    free_mb = 0.0 # যেহেতু ফাইল রাইট হবে না, তাই মেমোরি খালি দেখানোর দরকার নেই
             
             if free_mb < 0:
                 free_mb = 0.0
@@ -289,7 +305,7 @@ async def get_detailed_stats():
         u_stats = await user_db.command("dbstats")
         total_used_bytes += u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
     except Exception as e:
-        pass  # total_used_bytes অলরেডি ডিক্লেয়ার করা আছে, কোনো সমস্যা হবে না
+        pass
         
     # সামগ্রিক স্টোরেজ হিসাব (জিবি/এমবি)
     total_used_mb = total_used_bytes / (1024 * 1024)
