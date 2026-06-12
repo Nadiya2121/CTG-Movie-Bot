@@ -202,6 +202,13 @@ async def main_handler(client: Client, message: Message):
     # --- ক. পার্সোনাল চ্যাট হ্যান্ডলার (Private PM) ---
     # ==========================================
     if message.chat.type == ChatType.PRIVATE:
+        # [রিয়েল-টাইম ইউজার সেভ ফিক্স]: যেকোনো উপায়ে ইউজার বটে ঢুকলে বা মেসেজ দিলে সবার আগে ডাটাবেজে সেভ করা হবে
+        if message.from_user:
+            try:
+                await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
+            except Exception as e:
+                print(f"Error registering user at start: {e}")
+
         if text.startswith("/start"):
             
             # --- সিকিউরিটি চেক এবং ফাইল ডেলিভারি ---
@@ -288,12 +295,6 @@ async def main_handler(client: Client, message: Message):
                     else:
                         await message.reply_text("❌ দুঃখিত, ফাইলটি ডাটাবেজে খুঁজে পাওয়া যায়নি!")
                     return
-
-            # সাধারণ স্টার্ট কমান্ড
-            try:
-                await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
-            except:
-                pass
 
             welcome_text = (
                 f"👋 **Hey {message.from_user.mention}** 🍿\n\n"
@@ -759,7 +760,7 @@ async def start_back_handler(client: Client, callback_query):
         pass
     await callback_query.answer()
 
-# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (৬৪-বাইট সেফটি ক্যাপিং)
+# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (৬৪-বাইট সেфটি ক্যাপিং)
 @Client.on_callback_query(filters.regex(r"^tsearch\|"))
 async def tsearch_click_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
