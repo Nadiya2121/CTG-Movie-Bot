@@ -14,6 +14,12 @@ import config
 
 FILES_PER_PAGE = 5
 
+# --- ৬৪-বাইট কলব্যাক লিমিট সুরক্ষার জন্য বাইট-ভিত্তিক ট্রাঙ্কেট ফাংশন ---
+def safe_bytes_truncate(text: str, max_bytes: int) -> str:
+    encoded = text.encode('utf-8')
+    sliced = encoded[:max_bytes]
+    return sliced.decode('utf-8', errors='ignore').strip()
+
 # --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন ---
 def clean_movie_title(name: str) -> str:
     if not name or not isinstance(name, str):
@@ -228,7 +234,7 @@ async def main_handler(client: Client, message: Message):
                             
                             # [প্রিমিয়াম ব্র্যান্ডেড ওয়াটারমার্ক ক্যাপশন]
                             caption_text = (
-                                f"🎬 **ꜰɪʟᴇ ɴᴀᴍᴇ:** `{cleaned_name}`\n"
+                                f"🎬 **👑 ꜰɪʟᴇ ɴᴀᴍᴇ:** `{cleaned_name}`\n"
                                 f"💾 ** provide 👑 ꜱɪᴢᴇ:** `{file_size} MB`\n"
                                 f"⚡️ ** do ꜱᴘᴇᴇᴅ:** `Unlimited (Ultra Fast CDN)`\n\n"
                                 f"🍿 **ᴊᴏɪɴ ᴏᴜʀ ᴍᴏᴠɪᴇ ɴᴇᴛᴡᴏʀᴋ:**\n"
@@ -236,7 +242,7 @@ async def main_handler(client: Client, message: Message):
                                 f"├─ 📢 [Backup Channel]({config.CHANNEL_LINK_2})\n"
                                 f"└─ 💬 [Movie Request Group]({config.GROUP_LINK})\n\n"
                                 f"👨‍💻 *Power and Branded by CTG Network Team*\n\n"
-                                f"⚠️ **ꜱᴇᴄᴜʀɪᴛʏ ᴀʟᴇʀᴛ:**\n"
+                                f"⚠️ **⚠️ ꜱᴇᴄᴜʀɪᴛʏ ᴀʟᴇʀᴛ:**\n"
                                 f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর চ্যাট থেকে স্বയংক্রিয়ভাবে মুছে যাবে। তাই দ্রুত ফাইলটি আপনার **Saved Messages**-এ ফরোয়ার্ড করে রাখুন।"
                             )
                             
@@ -406,9 +412,10 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_search_messages(message, results_msg))
             return
 
-        # ১.৪ quarto ধাপ: কোনোভাবেই ফাইল না পাওয়া গেলে (৬৪-বাইট সেফটি ক্যাপিং)
+        # ১.৪ quarto ধাপ: কোনোভাবেই ফাইল না পাওয়া গেলে (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
+        safe_query = safe_bytes_truncate(query, 55)
         req_buttons = [
-            [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{query[:35].strip()}")]
+            [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{safe_query}")]
         ]
         await search_msg.edit_text(
             f"❌ দুঃখিত, **'{query}'** নামের কোনো ফাইল আমাদের সার্ভারে পাওয়া যায়নি।\n\n"
@@ -445,11 +452,13 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_group_reply(group_reply))
             return
             
-        # গ্রুপ চ্যাটের বানান এআই সংশোধন লজিক (৬৪-বাইট সেফটি ক্যাপিং)
+        # গ্রুপ চ্যাটের বানান এআই সংশোধন লজিক (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
         closest_match = await get_close_match_from_db(query)
         if closest_match:
+            # "gtsearch|" = 9 bytes. user_id = ~10 bytes. Available = 45 bytes. limit closest to 35 bytes.
+            safe_closest = safe_bytes_truncate(closest_match, 35)
             suggestion_buttons = [
-                [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"gtsearch|{closest_match[:30].strip()}|{user_id}")]
+                [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"gtsearch|{safe_closest}|{user_id}")]
             ]
             
             # [রিয়েল-টাইম ইউজার সেফটি নোটিশ]: বেনামী বা অ্যানোনিমাস মেসেজের ক্ষেত্রে NoneType এরর হ্যান্ডলিং ফিক্স
@@ -470,12 +479,13 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_group_reply(group_reply))
             return
             
-        # গ্রুপ চ্যাটের মুভি রিকোয়েস্ট বাটন (৬৪-বাইট সেফটি ক্যাপিং)
+        # গ্রুপ চ্যাটের মুভি রিকোয়েস্ট বাটন (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
+        safe_query = safe_bytes_truncate(query, 55)
         req_buttons = [
-            [InlineKeyboardButton("📢 Request Admin", callback_data=f"req|{query[:35].strip()}")]
+            [InlineKeyboardButton("📢 Request Admin", callback_data=f"req|{safe_query}")]
         ]
         
-        # [রিয়েল-টাইম ইউজার সেফটি নোটিশ]: বেনামী বা অ্যানোনিমাস মেসেজের ক্ষেত্রে NoneType এরর হ্যান্ডলিং ফিক্স
+        # [রিয়েল-টাইম ইউজার সেফটি নোটিশ]:  বেনামী বা অ্যানোনিমাস মেসেজের ক্ষেত্রে NoneType এরর হ্যান্ডলিং ফিক্স
         user_mention = message.from_user.mention if message.from_user else "ইউজার"
         
         not_found_msg = await message.reply_text(
@@ -517,8 +527,8 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
 
     total_results = len(filtered_results)
     
-    #６৪-বাইট লিমিট সুরক্ষায় কুয়েরি ট্রাঙ্কেট
-    safe_query = query[:30].strip()
+    # ৬৪-বাইট লিমিট সুরক্ষায় কুয়েরি বাইট-ভিত্তিক ট্রাঙ্কেট ফিক্স
+    safe_query = safe_bytes_truncate(query, 35)
     
     if total_results == 0:
         text_no_file = f"❌ দুঃখিত, আপনার নির্বাচিত ফিল্টারে কোনো ফাইল পাওয়া যায়নি।"
@@ -618,8 +628,8 @@ async def send_group_results(message_or_query, results, query, page=0, searcher_
             callback_data=f"gfile|{db_id}|{searcher_id}"
         )])
 
-    # 六৪-বাইট লিমিট সুরক্ষায় কুয়েরি ট্রাঙ্কেট
-    safe_query = query[:30].strip()
+    # ৬৪-বাইট লিমিট সুরক্ষায় কুয়েরি বাইট-ভিত্তিক ট্রাঙ্কেট ফিক্স
+    safe_query = safe_bytes_truncate(query, 35)
 
     nav_buttons = []
     if page > 0:
@@ -768,7 +778,7 @@ async def start_back_handler(client: Client, callback_query):
         pass
     await callback_query.answer()
 
-# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (৬৪-বাইট সেফটি ক্যাপিং)
+# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
 @Client.on_callback_query(filters.regex(r"^tsearch\|"))
 async def tsearch_click_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
@@ -852,7 +862,7 @@ async def request_movie_handler(client: Client, callback_query):
         else:
             await msg_ctx.reply_text(err_msg)
 
-# ७. এডমিনদের বাটনে ক্লিক হ্যান্ডলার
+# ৭. এডমিনদের বাটনে ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^admin_req\|"))
 async def admin_request_action_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
