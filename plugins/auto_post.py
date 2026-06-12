@@ -8,7 +8,33 @@ import json
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 import config
-from database import save_file, clean_movie_title
+from database import save_file
+
+# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (লোকালভাবে ডিফাইন করা হলো) ---
+def clean_movie_title(name: str) -> str:
+    if not name or not isinstance(name, str):
+        return "Movie File"
+        
+    # ১. টেলিগ্রাম ইউজারনেম ও লিংক ডিলিট
+    name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
+    name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
+    
+    # ২. ডেমেইন লিংক ডিলিট
+    domain_extensions = "com|org|net|xyz|club|co|tv|link|info|me|cc|site|space|click|in|online|icu"
+    name = re.sub(r'\b[a-zA-Z0-9-]+\.(' + domain_extensions + r')\b', '', name, flags=re.IGNORECASE)
+    
+    # ৩. মুভি ফাইল এক্সটেনশন ডিলিট
+    name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
+    
+    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
+    name = name.replace(".", " ").replace("_", " ").replace("-", " ")
+    
+    # অতিরিক্ত ডাবল স্পেস ক্লিন করা
+    name = re.sub(r'\s+', ' ', name).strip()
+    
+    if not name:
+         name = "Movie File"
+    return name
 
 # --- পাইথনের স্ট্যান্ডার্ড লাইব্রেরি দিয়ে সিঙ্ক ইউআরআই রিড করার ফাংশন ---
 def fetch_sync_url(url: str):
