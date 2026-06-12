@@ -223,23 +223,43 @@ async def get_file_by_db_id(db_id):
 # ==========================================
 
 async def get_detailed_stats():
-    # প্রতিটি ফাইল ডাটাবেজ থেকে আলাদাভাবে ডাটা সংগ্রহ
-    file_dbs_info = []
+    # সবগুলো ফাইল ডাটাবেজ থেকে মোট ফাইলের সংখ্যা বের করা
     total_files = 0
-    total_used_bytes = 0
-    
+    for idx, col in enumerate(file_cols):
+        try:
+            count = await col.estimated_document_count()
+            total_files += count
+        except Exception as e:
+            print(f"⚠️ ডাটাবেজ {idx+1} থেকে ফাইল গণনা করতে ব্যর্থ (ডিবি ডাউন থাকতে পারে): {e}")
+        
+    total_users = 0
+    premium_users = 0
+    total_groups = 0
+    try:
+        # [সংশোধন]: ইউজার এবং গ্রুপ সংখ্যা মেটাডাটার বদলে সরাসরি লাইভ গোনা হবে (১০০% রিয়েল-টাইম)
+        total_users = await users_col.count_documents({})
+        premium_users = await users_col.count_documents({"is_premium": True})
+        total_groups = await groups_col.count_documents({})
+        
+        # ইউজার ডাটাবেজের মেমোরি হিসাব
+        u_stats = await user_db.command("dbstats")
+        total_used_bytes += u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
+    except Exception as e:
+        # total_used_bytes ইনিশিয়েট করা হচ্ছে যদি উপরে ক্যাচ না হয়ে থাকে
+        total_used_bytes = 0
+        
+    # প্রতিটি ফাইল ডাটাবেজের আলাদা হিসাব
+    file_dbs_info = []
     for idx, db in enumerate(file_dbs):
         try:
             col = file_cols[idx]
             count = await col.estimated_document_count()
-            total_files += count
             
             stats = await db.command("dbstats")
             used_bytes = stats.get("storageSize", 0) + stats.get("indexSize", 0)
             total_used_bytes += used_bytes
             used_mb = used_bytes / (1024 * 1024)
             
-            # আপনার ৪০০ এমবি লিমিট অনুযায়ী কত খালি আছে তার হিসাব
             free_mb = config.DB_LIMIT_MB - used_mb
             if free_mb < 0:
                 free_mb = 0.0
@@ -263,20 +283,6 @@ async def get_detailed_stats():
                 "free_mb": 0.0,
                 "status": "❌ OFFLINE"
             })
-        
-    total_users = 0
-    premium_users = 0
-    total_groups = 0
-    try:
-        total_users = await users_col.estimated_document_count()
-        premium_users = await users_col.count_documents({"is_premium": True})
-        total_groups = await groups_col.estimated_document_count()
-        
-        # ইউজার ডাটাবেজের মেমোরি হিসাব
-        u_stats = await user_db.command("dbstats")
-        total_used_bytes += u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
-    except Exception as e:
-        print(f"⚠️ ইউজার বা গ্রুপ ডাটা গণনা করতে ব্যর্থ: {e}")
         
     # সামগ্রিক স্টোরেজ হিসাব (জিবি/এমবি)
     total_used_mb = total_used_bytes / (1024 * 1024)
