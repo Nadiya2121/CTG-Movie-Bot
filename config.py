@@ -22,16 +22,14 @@ LOG_CHANNEL = -1003973741130      # আপনার রিকোয়েস্ট 
 
 # --- মাল্টিপল ডাটাবেজ কনফিগারেশন (Multi-DB Config) ---
 
-# ১. ইউজার ডাটাবেজ (এখানে ২য় ডাটাবেজের লিঙ্কটি বসিয়ে দেওয়া হলো, যা সম্পূর্ণ খালি এবং রাইট লক-মুক্ত)
-USER_DATABASE_URI = "mongodb+srv://xanoye1655:xanoye1655@cluster0.toknq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+# ১. ইউজার ডাটাবেজ (এখানে ৪র্থ ডাটাবেজের লিঙ্কটি দেওয়া হলো, এটিতে শুধুমাত্র ইউজাররা সেভ হবে, কোনো মুভি ফাইল সেভ হবে না)
+USER_DATABASE_URI = "mongodb+srv://hepemo5263:hepemo5263@cluster0.5vugv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
-# ২. ফাইল বা মুভি ডাটাবেজগুলোর তালিকা (মোট ৪টি ডাটাবেজ সচল করা হলো)
-# ১মটি আপনার মূল ডাটাবেজ (যাতে ২ লাখ মুভি আছে) এবং বাকি ৩টি আপনার নতুন পাঠানো ডাটাবেজ।
+# ২. ফাইল বা মুভি ডাটাবেজগুলোর তালিকা (তালিকা থেকে ৪র্থ ডাটাবেজটি বাদ দেওয়া হলো, যাতে এখানে ভুল করেও কোনো ফাইল সেভ না হয়)
 FILE_DATABASE_URIS = [
-    "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ১ম ফাইল ডিবি (২ লাখ মুভি)
-    "mongodb+srv://xanoye1655:xanoye1655@cluster0.toknq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ২য় ফাইল ডিবি (নতুন)
-    "mongodb+srv://manogog673:manogog673@cluster0.ot1qt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ৩য় ফাইল ডিবি (নতুন)
-    "mongodb+srv://hepemo5263:hepemo5263@cluster0.5vugv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # ৪র্থ ফাইল ডিবি (নতুন)
+    "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ১ম ফাইল ডিবি (রিড-অনলি)
+    "mongodb+srv://xanoye1655:xanoye1655@cluster0.toknq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", # ২য় ফাইল ডিবি (নতুন ফাইল সেভ হবে)
+    "mongodb+srv://manogog673:manogog673@cluster0.ot1qt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # ৩য় ফাইল ডিবি (নতুন ফাইল সেভ হবে)
 ]
 
 # ৩. প্রতিটি ফাইল ডাটাবেজের সর্বোচ্চ স্টোরেজ লিমিট (আপনার নির্দেশ অনুযায়ী ৩০০ এমবি সেট করা হয়েছে)
