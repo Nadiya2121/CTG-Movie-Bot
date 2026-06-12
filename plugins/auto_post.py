@@ -5,10 +5,27 @@ import re
 import urllib.parse
 import urllib.request
 import json
+import time  # ডুপ্লিকেট স্প্যামিং ট্র্যাকিংয়ের জন্য
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 import config
 from database import save_file
+
+# --- ডুপ্লিকেট স্প্যামিং প্রতিরোধ ক্যাশ ---
+RECENTLY_POSTED = {}
+
+# --- টিএমডিবি ক্যাটাগরি আইডি ডিকশনারি ম্যাপিং ---
+GENRE_MAP = {
+    28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
+    80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
+    14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
+    9648: "Mystery", 10749: "Romance", 878: "Sci-Fi", 10770: "TV Movie",
+    53: "Thriller", 10752: "War", 37: "Western",
+    # টিভি সিরিজ ক্যাটাগরি
+    10759: "Action & Adventure", 10762: "Kids", 10763: "News",
+    10764: "Reality", 10765: "Sci-Fi & Fantasy", 10766: "Soap",
+    10767: "Talk", 10768: "War & Politics"
+}
 
 # --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (লোকালভাবে ডিফাইন করা হলো) ---
 def clean_movie_title(name: str) -> str:
@@ -26,7 +43,7 @@ def clean_movie_title(name: str) -> str:
     # ৩. মুভি ফাইল এক্সটেনশন ডিলিট
     name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
     
-    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
+    # ४. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
     name = name.replace(".", " ").replace("_", " ").replace("-", " ")
     
     # অতিরিক্ত ডাবল স্পেস ক্লিন করা
@@ -139,6 +156,15 @@ async def auto_channel_post_handler(client: Client, message: Message):
     # TMDb থেকে বছরসহ নিখুঁত ম্যাচিং তথ্য সংগ্রহ (মুভি ও ওয়েব সিরিজ ক্যাটাগরি ডিটেকশন)
     movie_meta = await fetch_tmdb_metadata(file_name)
     
+    # [অ্যান্টি-স্প্যামিং লজিক]: যদি এই মুভিটি গত ৫ মিনিটের মধ্যে অলরেডি পোস্ট করা হয়ে থাকে, তবে ডুপ্লিকেট স্কিপ করবে
+    current_time = time.time()
+    movie_id = movie_meta.get("id") if movie_meta else None
+    spam_key = f"id_{movie_id}" if movie_id else f"title_{cleaned_title}"
+    
+    if spam_key in RECENTLY_POSTED:
+        if current_time - RECENTLY_POSTED[spam_key] < 300:  # ৩০০ সেকেন্ড = ৫ মিনিট
+            return
+            
     bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
     
     # আয়ের সুরক্ষায় app_ প্রিফিক্স ব্যবহার করা হলো, যা মিনি অ্যাপ বিজ্ঞাপন নিশ্চিত করবে
@@ -166,7 +192,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
             header_text = "🎬 **NEW MOVIE ADDED!** 🎬"
             title_label = "Movie Name"
             
-        # [ইউনিকোড স্ক্রিপ্ট ডিটেক্টর]: যদি নামের মধ্যে কোনো বাংলা হরফ থাকে, তবে সেটি বাদ দিয়ে সুন্দর ইংরেজি নামটি ব্যবহার করা হবে
+        # [ইউনিকোড স্ক্রিপ্ট ডিটেক্টর]: যদি নামের মধ্যে কোনো বাংলা হরফ থাকে, তবে ইংরেজি নামটি ব্যবহার করা হবে
         if re.search(r'[\u0980-\u09ff]', title_raw):
             title = cleaned_title
         else:
@@ -176,10 +202,16 @@ async def auto_channel_post_handler(client: Client, message: Message):
         overview = movie_meta.get("overview") or "No storyline available."
         poster_path = movie_meta.get("poster_path")
         
+        # [ক্যাটাগরি রিডার]: আইডি কোড থেকে ম্যাপ করে হরর, কমেডি, অ্যাকশন আলাদা করার লজিক
+        genre_ids = movie_meta.get("genre_ids", [])
+        genre_names = [GENRE_MAP.get(gid) for gid in genre_ids if GENRE_MAP.get(gid)]
+        genres = ", ".join(genre_names) if genre_names else "N/A"
+        
         caption_text = (
             f"{header_text}\n\n"
             f"📝 **{title_label}:** `{title}` ({year})\n"
             f"🌟 **Rating:** ⭐ `{rating}/10`\n"
+            f"🎭 **Genre:** `{genres}`\n"  # ক্যাটাগরি যুক্ত করা হলো
             f"💾 **Size:** `{file_size_mb} MB`\n\n"
             f"📖 **Storyline (Overview):**\n"
             f"_{overview[:400]}..._\n\n"
@@ -197,6 +229,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
                     caption=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
+                RECENTLY_POSTED[spam_key] = current_time  # সফলভাবে পোস্ট হলে ক্যাশে টাইমস্ট্যাম্প সেভ হবে
                 return
             except Exception as e:
                 print(f"Failed to send poster photo: {e}")
@@ -215,5 +248,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
             text=fallback_text,
             reply_markup=InlineKeyboardMarkup(buttons)
         )
+        RECENTLY_POSTED[spam_key] = current_time  # সফলভাবে পোস্ট হলে ক্যাশে টাইমস্ট্যাম্প সেভ হবে
     except Exception as e:
         print(f"Failed to send fallback update message: {e}")
