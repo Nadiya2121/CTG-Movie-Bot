@@ -230,7 +230,7 @@ async def get_detailed_stats():
     # প্রতিটি ফাইল ডাটাবেজ থেকে আলাদাভাবে ডাটা সংগ্রহ
     file_dbs_info = []
     total_files = 0
-    total_used_bytes = 0
+    total_used_bytes = 0  # শুরুতে মেমোরি সুরক্ষায় ০ ইনিশিয়ালাইজ করা হলো
     
     for idx, db in enumerate(file_dbs):
         try:
@@ -243,23 +243,27 @@ async def get_detailed_stats():
             total_used_bytes += used_bytes
             used_mb = used_bytes / (1024 * 1024)
             
-            # আপনার ৪০০ এমবি লিমিট অনুযায়ী কত খালি আছে তার হিসাব
-            free_mb = config.DB_LIMIT_MB - used_mb
+            # [উন্নত হিসাব]: ১ম ডাটাবেজের হিসাব আসল ৫১২ এমবি থেকে হবে, এবং বাকিগুলোর হিসাব config.DB_LIMIT_MB লিমিট থেকে হবে
+            if idx == 0:
+                free_mb = 512.0 - used_mb
+                limit_display = 512
+                status_str = "👑 USER DEDICATED"
+            else:
+                free_mb = config.DB_LIMIT_MB - used_mb
+                limit_display = config.DB_LIMIT_MB
+                status_str = "🟢 ACTIVE" if used_mb < config.DB_LIMIT_MB else "🔴 FULL"
+                if idx in BLOCKED_DBS:
+                    status_str = "🔴 BLOCKED"
+            
             if free_mb < 0:
                 free_mb = 0.0
-                
-            status_str = "🟢 ACTIVE" if used_mb < config.DB_LIMIT_MB else "🔴 FULL"
-            if idx in BLOCKED_DBS:
-                status_str = "🔴 BLOCKED"
-            if idx == 0:
-                # ১ম ফাইল ডাটাবেজের স্ট্যাটাস সবসময় "USER ONLY" বা "SKIPPED FOR FILES" দেখাবে
-                status_str = "👑 USER DEDICATED"
             
             file_dbs_info.append({
                 "db_num": idx + 1,
                 "files_count": count,
                 "used_mb": round(used_mb, 2),
                 "free_mb": round(free_mb, 2),
+                "limit": limit_display,
                 "status": status_str
             })
         except Exception as e:
@@ -268,6 +272,7 @@ async def get_detailed_stats():
                 "files_count": 0,
                 "used_mb": 0.0,
                 "free_mb": 0.0,
+                "limit": config.DB_LIMIT_MB,
                 "status": "❌ OFFLINE"
             })
         
@@ -284,7 +289,7 @@ async def get_detailed_stats():
         u_stats = await user_db.command("dbstats")
         total_used_bytes += u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
     except Exception as e:
-        total_used_bytes = 0
+        pass  # total_used_bytes অলরেডি ডিক্লেয়ার করা আছে, কোনো সমস্যা হবে না
         
     # সামগ্রিক স্টোরেজ হিসাব (জিবি/এমবি)
     total_used_mb = total_used_bytes / (1024 * 1024)
