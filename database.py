@@ -42,7 +42,7 @@ BLOCKED_DBS = set()
 
 async def get_active_files_collection():
     """
-    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনфিগ লিমিট) এর নিচে আছে,
+    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনফিগ লিমিট) এর নিচে আছে,
     সেটির কালেকশন রিটার্ন করবে। ১ম ফাইল ডাটাবেজটি (Index 0) নতুন ফাইল সেভের ক্ষেত্রে সম্পূর্ণ স্কিপ করা হবে।
     """
     if not file_cols or len(file_cols) < 2:
@@ -230,7 +230,7 @@ async def get_detailed_stats():
     # প্রতিটি ফাইল ডাটাবেজ থেকে আলাদাভাবে ডাটা সংগ্রহ
     file_dbs_info = []
     total_files = 0
-    total_used_bytes = 0
+    total_used_bytes = 0  # মেমোরি ফিক্সের জন্য ০ ডিক্লেয়ার করা হলো
     
     # কোন ফাইল ডাটাবেজের লিঙ্কটি ইউজার ডাটাবেজ হিসেবে কনফিগারে সেট করা আছে তা অটো-ডিটেক্ট করা হচ্ছে
     user_db_idx = -1
@@ -250,8 +250,7 @@ async def get_detailed_stats():
             total_used_bytes += used_bytes
             used_mb = used_bytes / (1024 * 1024)
             
-            # [ডাইনামিক হিসাব]: 
-            # যদি এই ডাটাবেজটি ইউজার ডাটাবেজ হিসেবে কনফিগার করা থাকে, তবে এটার স্ট্যাটাস "USER DB" দেখাবে
+            # [ডাইনামিক হিসাব]
             if idx == user_db_idx:
                 free_mb = config.DB_LIMIT_MB - used_mb
                 limit_display = config.DB_LIMIT_MB
@@ -259,7 +258,6 @@ async def get_detailed_stats():
                 if idx in BLOCKED_DBS:
                     status_str = "🔴 BLOCKED (👑 USER DB)"
             else:
-                # সাধারণ ফাইল ডাটাবেজ
                 free_mb = config.DB_LIMIT_MB - used_mb
                 limit_display = config.DB_LIMIT_MB
                 status_str = "🟢 ACTIVE" if used_mb < config.DB_LIMIT_MB else "🔴 FULL"
@@ -269,7 +267,7 @@ async def get_detailed_stats():
                 # ১ম ফাইল ডাটাবেজকে আমরা যেহেতু ফাইল রাইটিং এ স্কিপ করেছি, তাই এটি "🔒 READ ONLY" দেখাবে
                 if idx == 0:
                     status_str = "🔒 READ ONLY"
-                    free_mb = 0.0 # যেহেতু ফাইল রাইট হবে না, তাই মেমোরি খালি দেখানোর দরকার নেই
+                    free_mb = 0.0 # স্পেস হিসাবের প্রয়োজন নেই
             
             if free_mb < 0:
                 free_mb = 0.0
@@ -303,7 +301,24 @@ async def get_detailed_stats():
         
         # ইউজার ডাটাবেজের মেমোরি হিসাব
         u_stats = await user_db.command("dbstats")
-        total_used_bytes += u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
+        used_bytes_user = u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
+        total_used_bytes += used_bytes_user
+        
+        # [নতুন প্রফেশনাল ড্যাশবোর্ড লজিক]: যদি ইউজার ডাটাবেজটি সম্পূর্ণ আলাদা ক্লাস্টার বা ফাইল তালিকার বাইরে থাকে (যেমন ৪র্থ ডাটাবেজ)
+        if user_db_idx == -1:
+            used_mb_user = used_bytes_user / (1024 * 1024)
+            free_mb_user = 512.0 - used_mb_user
+            if free_mb_user < 0:
+                free_mb_user = 0.0
+                
+            file_dbs_info.append({
+                "db_num": "USER_DEDICATED",  # বিশেষ ফ্ল্যাগ
+                "files_count": total_users,
+                "used_mb": round(used_mb_user, 2),
+                "free_mb": round(free_mb_user, 2),
+                "limit": 512,
+                "status": "🟢 ACTIVE (DEDICATED)"
+            })
     except Exception as e:
         pass
         
