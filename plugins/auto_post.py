@@ -117,7 +117,7 @@ async def fetch_tmdb_metadata(raw_file_name: str):
     return None
 
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হওয়া মাত্রই স্বয়ংক্রিয়ভাবে ক্যাচ করার হ্যান্ডলার ---
-@Client.on_channel_post(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video)) # ডেকোরেটর পরিবর্তন করা হলো
+@Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video)) # পাইরোগ্রাম স্ট্যান্ডার্ড অন-মেসেজ রিস্টোর করা হলো
 async def auto_channel_post_handler(client: Client, message: Message):
     # ডাটাবেজ সেভ সম্পন্ন হওয়ার জন্য সামান্য অপেক্ষা
     await asyncio.sleep(2)
