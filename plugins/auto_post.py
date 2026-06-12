@@ -43,7 +43,7 @@ def clean_movie_title(name: str) -> str:
     # ৩. মুভি ফাইল এক্সটেনশন ডিলিট
     name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
     
-    # ४. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
+    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
     name = name.replace(".", " ").replace("_", " ").replace("-", " ")
     
     # অতিরিক্ত ডাবল স্পেস ক্লিন করা
@@ -95,7 +95,7 @@ async def fetch_tmdb_metadata(raw_file_name: str):
     search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=en-US"
     
     # পাইথনের ইভেন্ট লুপের ব্যাকগ্রাউন্ড থ্রেড পুলে রিকোয়েস্ট পাঠানো হচ্ছে
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     data = await loop.run_in_executor(None, fetch_sync_url, search_url)
     
     if data:
@@ -137,18 +137,28 @@ async def auto_channel_post_handler(client: Client, message: Message):
     # মঙ্গোডিবি থেকে এই ফাইলের অবজেক্ট আইডি খোঁজা
     from database import file_cols
     db_id = None
+    
+    # ১. প্রথমে ফাইল ইউনিক আইডি দিয়ে খোঁজা হচ্ছে
     for col in file_cols:
         doc = await col.find_one({"file_id": media.file_id})
         if doc:
             db_id = str(doc["_id"])
             break
             
+    # ২. টেস্ট করার সুবিধার্থে: ফাইল আইডি দিয়ে না পাওয়া গেলে নাম ও সাইজ দিয়ে ডাটাবেজে ডুপ্লিকেট খোঁজা হচ্ছে
     if not db_id:
-        # যদি কোনো কারণে আগে সেভ না হয়ে থাকে, তবে এখন সেভ করে নেওয়া হচ্ছে
+        for col in file_cols:
+            doc = await col.find_one({"file_name": file_name, "file_size": media.file_size})
+            if doc:
+                db_id = str(doc["_id"])
+                break
+            
+    # ৩. যদি ফাইলটি ডাটাবেজে না থাকে, তবে নতুন ফাইল হিসেবে সেভ করা হচ্ছে
+    if not db_id:
         db_id = await save_file(file_name, media.file_size, media.file_id, message.chat.id, message.id)
         
     if not db_id:
-        return  # আইডি না পাওয়া গেলে পোস্ট করা হবে না
+        return  # আইডি কোনোভাবেই না পাওয়া গেলে পোস্ট করা হবে না
         
     # টিএমডিবির জন্য নাম পরিচ্ছন্ন করা হচ্ছে
     cleaned_title = clean_movie_title(file_name)
@@ -235,6 +245,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
                 print(f"Failed to send poster photo: {e}")
                 
     # যদি TMDb-তে কোনো তথ্য না পাওয়া যায় বা ফটো ফেইল করে, তবে সাধারণ টেক্সট আকারে পোস্ট হবে (সম্পূর্ণ ইংরেজিতে)
+    cleaned_title = clean_movie_title(file_name)
     fallback_text = (
         f"🎬 **NEW FILE ADDED!** 🎬\n\n"
         f"📝 **File Name:** `{cleaned_title}`\n"
