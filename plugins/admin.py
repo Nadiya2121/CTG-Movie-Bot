@@ -99,7 +99,7 @@ async def db_stats_cmd(client: Client, message: Message):
             f"│  ├⋟ sᴛᴀᴛᴜs ⋟ `{db_info['status']}`\n"
             f"│  ├⋟ ᴀʟʟ ғɪʟᴇs ⋟ `{db_info['files_count']}`\n"
             f"│  ├⋟ ᴜsᴇᴅ ⋟ `{db_info['used_mb']} MB`\n"
-            f"│  └⋟ ғʀᴇᴇ ⋟ `{db_info['free_mb']} MB` (Limit: {config.DB_LIMIT_MB}MB)\n"
+            f"│  └⋟ ғʀᴇᴇ ⋟ `{db_info['free_mb']} MB` (Limit: {db_info['limit']}MB)\n" # ডায়নামিক লিমিট ফিক্স
             f"│\n"
         )
     
