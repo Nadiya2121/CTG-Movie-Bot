@@ -5,14 +5,10 @@ import re
 import urllib.parse
 import urllib.request
 import json
-import time  # ডুপ্লিকেট স্প্যামিং ট্র্যাকিংয়ের জন্য
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 import config
 from database import save_file
-
-# --- ডুপ্লিকেট স্প্যামিং প্রতিরোধ ক্যাশ ---
-RECENTLY_POSTED = {}
 
 # --- টিএমডিবি ক্যাটাগরি আইডি ডিকশনারি ম্যাপিং ---
 GENRE_MAP = {
@@ -166,15 +162,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
     # TMDb থেকে বছরসহ নিখুঁত ম্যাচিং তথ্য সংগ্রহ (মুভি ও ওয়েব সিরিজ ক্যাটাগরি ডিটেকশন)
     movie_meta = await fetch_tmdb_metadata(file_name)
     
-    # [অ্যান্টি-স্প্যামিং লজিক]: যদি এই মুভিটি গত ৫ মিনিটের মধ্যে অলরেডি পোস্ট করা হয়ে থাকে, তবে ডুপ্লিকেট স্কিপ করবে
-    current_time = time.time()
-    movie_id = movie_meta.get("id") if movie_meta else None
-    spam_key = f"id_{movie_id}" if movie_id else f"title_{cleaned_title}"
-    
-    if spam_key in RECENTLY_POSTED:
-        if current_time - RECENTLY_POSTED[spam_key] < 300:  # ৩০০ সেকেন্ড = ৫ মিনিট
-            return
-            
     bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
     
     # আয়ের সুরক্ষায় app_ প্রিফিক্স ব্যবহার করা হলো, যা মিনি অ্যাপ বিজ্ঞাপন নিশ্চিত করবে
@@ -212,7 +199,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         overview = movie_meta.get("overview") or "No storyline available."
         poster_path = movie_meta.get("poster_path")
         
-        # [ক্যাটাগরি রিডার]: আইডি কোড থেকে ম্যাপ করে হরর, কমেডি, অ্যাকশন আলাদা করার লজিক
+        # [ক্যাটাগরি রিডার]: আইডি কোড থেকে ম্যাপ করে ক্যাটাগরি আলাদা করার লজিক
         genre_ids = movie_meta.get("genre_ids", [])
         genre_names = [GENRE_MAP.get(gid) for gid in genre_ids if GENRE_MAP.get(gid)]
         genres = ", ".join(genre_names) if genre_names else "N/A"
@@ -221,7 +208,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
             f"{header_text}\n\n"
             f"📝 **{title_label}:** `{title}` ({year})\n"
             f"🌟 **Rating:** ⭐ `{rating}/10`\n"
-            f"🎭 **Genre:** `{genres}`\n"  # ক্যাটাগরি যুক্ত করা হলো
+            f"🎭 **Genre:** `{genres}`\n"
             f"💾 **Size:** `{file_size_mb} MB`\n\n"
             f"📖 **Storyline (Overview):**\n"
             f"_{overview[:400]}..._\n\n"
@@ -239,7 +226,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
                     caption=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
-                RECENTLY_POSTED[spam_key] = current_time  # সফলভাবে পোস্ট হলে ক্যাশে টাইমস্ট্যাম্প সেভ হবে
                 return
             except Exception as e:
                 print(f"Failed to send poster photo: {e}")
@@ -259,6 +245,5 @@ async def auto_channel_post_handler(client: Client, message: Message):
             text=fallback_text,
             reply_markup=InlineKeyboardMarkup(buttons)
         )
-        RECENTLY_POSTED[spam_key] = current_time  # সফলভাবে পোস্ট হলে ক্যাশে টাইমস্ট্যাম্প সেভ হবে
     except Exception as e:
         print(f"Failed to send fallback update message: {e}")
