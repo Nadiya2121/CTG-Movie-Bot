@@ -8,7 +8,9 @@ import json
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 import config
-from database import save_file
+
+# database.py থেকে প্রয়োজনীয় কালেকশন এবং ইউজার ডাটাবেজ সরাসরি ইম্পোর্ট করা হলো
+from database import file_cols, user_db, save_file
 
 # --- টিএমডিবি ক্যাটাগরি আইডি ডিকশনারি ম্যাপিং ---
 GENRE_MAP = {
@@ -22,6 +24,13 @@ GENRE_MAP = {
     10764: "Reality", 10765: "Sci-Fi & Fantasy", 10766: "Soap",
     10767: "Talk", 10768: "War & Politics"
 }
+
+# --- চ্যাট আইডি ফরম্যাটিং হেল্পার (স্ট্রিং টু ইন্টিজার এরর এড়াতে) ---
+def get_chat_id(chat_id_val):
+    if isinstance(chat_id_val, str):
+        if re.match(r'^-?\d+$', chat_id_val):
+            return int(chat_id_val)
+    return chat_id_val
 
 # --- ফাইল কোয়ালিটি সনাক্ত করার ফাংশন ---
 def detect_quality(name: str) -> str:
@@ -69,7 +78,7 @@ def clean_movie_title(name: str) -> str:
          name = "Movie File"
     return name
 
-# --- পাইথনের স্ট্যান্ডার্ড লাইব্রেরি দিয়ে সিঙ্ক ইউআরআই রিড করার ফাংশন ---
+# --- সিঙ্ক ইউআরআই রিড করার ফাংশন ---
 def fetch_sync_url(url: str):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -131,23 +140,23 @@ async def fetch_tmdb_metadata(raw_file_name: str):
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হ্যান্ডলার ---
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_channel_post_handler(client: Client, message: Message):
+    # ডাটাবেজ প্রসেস সম্পন্ন হওয়ার জন্য সামান্য বিরতি
     await asyncio.sleep(2)
     
     media = message.document or message.video
     file_name = media.file_name
     file_size_mb = round(media.file_size / (1024 * 1024), 2)
     
-    from database import file_cols
     db_id = None
     
-    # ১. প্রথমে ফাইল ইউনিক আইডি দিয়ে খোঁজ করা হচ্ছে
+    # ১. ফাইল ইউনিক আইডি দিয়ে খোঁজা হচ্ছে (সবগুলো কালেকশনে)
     for col in file_cols:
         doc = await col.find_one({"file_id": media.file_id})
         if doc:
             db_id = str(doc["_id"])
             break
             
-    # ২. নাম ও সাইজ দিয়ে ডাটাবেজে ডুপ্লিকেট খোঁজ করা হচ্ছে
+    # ২. নাম ও সাইজ দিয়ে ডাটাবেজে ডুপ্লিকেট খোঁজা হচ্ছে
     if not db_id:
         for col in file_cols:
             doc = await col.find_one({"file_name": file_name, "file_size": media.file_size})
@@ -160,17 +169,17 @@ async def auto_channel_post_handler(client: Client, message: Message):
         try:
             db_id = await save_file(file_name, media.file_size, media.file_id, message.chat.id, message.id)
         except Exception as e:
-            print(f"Error saving file: {e}")
+            print(f"Error while calling save_file: {e}")
         
     if not db_id:
-        print("Skipping auto post: db_id not found or failed to save.")
+        print("Skipping post: File ID could not be retrieved or saved.")
         return
         
     cleaned_title = clean_movie_title(file_name)
     movie_meta = await fetch_tmdb_metadata(file_name)
     bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
     
-    # ইউনিক কি (Key) নির্ধারণ
+    # ইউনিক ট্র্যাকিং কি (Key) তৈরি করা হচ্ছে
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
         tmdb_id = movie_meta.get("id")
@@ -187,32 +196,29 @@ async def auto_channel_post_handler(client: Client, message: Message):
         "quality": current_quality
     }
     
-    # ডেটাবেজ মার্জিং লজিক (নিরাপদ ট্রাই-এক্সেপ্ট ব্লক সহ)
-    files_list = [file_info]  # ডিফল্ট ফলব্যাক মান
+    # ডেডিকেটেড ও রাইট-সক্ষম 'user_db' থেকে কালেকশন এক্সেস করা হচ্ছে
+    posts_col = user_db["channel_posts"]
+    files_list = [file_info]
     existing_post = None
-    posts_col = None
     use_aggregation = False
     
     try:
-        if file_cols and len(file_cols) > 0:
-            db = file_cols[0].database
-            posts_col = db["channel_posts"]
-            
-            existing_post = await posts_col.find_one({"_id": unique_key})
-            if existing_post:
-                files_list = existing_post.get("files", [])
-                if not any(f["db_id"] == db_id for f in files_list):
-                    files_list.append(file_info)
-                    await posts_col.update_one({"_id": unique_key}, {"$set": {"files": files_list}})
-            else:
-                await posts_col.insert_one({"_id": unique_key, "files": files_list, "msg_id": None})
-            use_aggregation = True
+        existing_post = await posts_col.find_one({"_id": unique_key})
+        if existing_post:
+            files_list = existing_post.get("files", [])
+            # ডুপ্লিকেট ডাটা এন্ট্রি এড়াতে চেক করা হচ্ছে
+            if not any(f["db_id"] == db_id for f in files_list):
+                files_list.append(file_info)
+                await posts_col.update_one({"_id": unique_key}, {"$set": {"files": files_list}})
+        else:
+            await posts_col.insert_one({"_id": unique_key, "files": files_list, "msg_id": None})
+        use_aggregation = True
     except Exception as e:
-        print(f"Database aggregation/lookup error: {e}. Falling back to normal posting.")
+        print(f"Aggregation database error: {e}. Falling back to single-post behavior.")
         files_list = [file_info]
         use_aggregation = False
         
-    # বাটন ও সাইজ টেক্সট সাজানো
+    # ডাইনামিক বাটন এবং ফাইল সাইজ টেক্সট সাজানো হচ্ছে
     buttons = []
     size_parts = []
     for f in files_list:
@@ -223,7 +229,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         
     size_str = " | ".join(size_parts)
     
-    # ক্যাপশন ফরম্যাটিং (টিএমডিবি ডাটা থাকলে)
+    # ক্যাপশন তৈরি (টিএমডিবি ডাটা থাকলে)
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
         if media_type == "tv":
@@ -268,35 +274,37 @@ async def auto_channel_post_handler(client: Client, message: Message):
             f"🍿 Select your preferred quality below to download instantly!"
         )
         
-    # এডিটিং বা নতুন পোস্ট করার প্রক্রিয়া
+    update_chat_id = get_chat_id(config.UPDATE_CHANNEL_ID)
     sent_msg = None
+    
+    # এডিট করার চেষ্টা করা হচ্ছে (যদি আগের মেসেজ আইডি থাকে)
     if use_aggregation and existing_post and existing_post.get("msg_id"):
         msg_id = existing_post["msg_id"]
         try:
             if poster_path:
                 await client.edit_message_caption(
-                    chat_id=config.UPDATE_CHANNEL_ID,
+                    chat_id=update_chat_id,
                     message_id=msg_id,
                     caption=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
             else:
                 await client.edit_message_text(
-                    chat_id=config.UPDATE_CHANNEL_ID,
+                    chat_id=update_chat_id,
                     message_id=msg_id,
                     text=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
-            return  # এডিট সফল হলে এখানেই ফাংশন শেষ হবে
+            return  # এডিট সফল হলে এখানেই সম্পন্ন হবে
         except Exception as e:
-            print(f"Failed to edit message {msg_id}: {e}. Sending as a new post...")
+            print(f"Failed to edit message {msg_id}: {e}. Posting a new update message instead.")
             
     # নতুন পোস্ট পাঠানোর প্রক্রিয়া
     if poster_path:
         poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}"
         try:
             sent_msg = await client.send_photo(
-                chat_id=config.UPDATE_CHANNEL_ID,
+                chat_id=update_chat_id,
                 photo=poster_url,
                 caption=caption_text,
                 reply_markup=InlineKeyboardMarkup(buttons)
@@ -307,15 +315,15 @@ async def auto_channel_post_handler(client: Client, message: Message):
     if not sent_msg:
         try:
             sent_msg = await client.send_message(
-                chat_id=config.UPDATE_CHANNEL_ID,
+                chat_id=update_chat_id,
                 text=caption_text,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         except Exception as e:
             print(f"Failed to send update message: {e}")
             
-    # ডেটাবেজে মেসেজ আইডি সংরক্ষণ (ভবিষ্যতে এডিটের জন্য)
-    if sent_msg and use_aggregation and posts_col is not None:
+    # ডেটাবেজে পোস্টের মেসেজ আইডি আপডেট রাখা হচ্ছে
+    if sent_msg and use_aggregation:
         try:
             await posts_col.update_one(
                 {"_id": unique_key},
@@ -323,4 +331,4 @@ async def auto_channel_post_handler(client: Client, message: Message):
                 upsert=True
             )
         except Exception as e:
-            print(f"Failed to save post reference to DB: {e}")
+            print(f"Failed to update post reference in DB: {e}")
