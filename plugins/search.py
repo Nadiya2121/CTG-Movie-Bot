@@ -451,8 +451,12 @@ async def main_handler(client: Client, message: Message):
             suggestion_buttons = [
                 [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"gtsearch|{closest_match[:30].strip()}|{user_id}")]
             ]
+            
+            # [রিয়েল-টাইম ইউজার সেফটি নোটিশ]: বেনামী বা অ্যানোনিমাস মেসেজের ক্ষেত্রে NoneType এরর হ্যান্ডলিং ফিক্স
+            user_mention = message.from_user.mention if message.from_user else "ইউজার"
+            
             suggestion_msg = await message.reply_text(
-                f"❌ দুঃখিত {message.from_user.mention}, আপনার খোঁজা ফাইলটি পাওয়া যায়নি।\n\n"
+                f"❌ দুঃখিত {user_mention}, আপনার খোঁজা ফাইলটি পাওয়া যায়নি।\n\n"
                 f"🤔 আপনি কি **'{closest_match}'** মুভিটি খুঁজছেন?",
                 reply_markup=InlineKeyboardMarkup(suggestion_buttons)
             )
@@ -470,8 +474,12 @@ async def main_handler(client: Client, message: Message):
         req_buttons = [
             [InlineKeyboardButton("📢 Request Admin", callback_data=f"req|{query[:35].strip()}")]
         ]
+        
+        # [রিয়েল-টাইম ইউজার সেফটি নোটিশ]: বেনামী বা অ্যানোনিমাস মেসেজের ক্ষেত্রে NoneType এরর হ্যান্ডলিং ফিক্স
+        user_mention = message.from_user.mention if message.from_user else "ইউজার"
+        
         not_found_msg = await message.reply_text(
-            f"❌ দুঃখিত {message.from_user.mention}, **'{query}'** মুভিটি পাওয়া যায়নি।\n"
+            f"❌ দুঃখিত {user_mention}, **'{query}'** মুভিটি পাওয়া যায়নি।\n"
             f"👉 আপনি চাইলে নিচের বাটনে চাপ দিয়ে এডমিনকে রিকোয়েস্ট করতে পারেন।",
             reply_markup=InlineKeyboardMarkup(req_buttons)
         )
@@ -509,7 +517,7 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
 
     total_results = len(filtered_results)
     
-    # ৬৪-বাইট লিমিট সুরক্ষায় কুয়েরি ট্রাঙ্কেট
+    #６৪-বাইট লিমিট সুরক্ষায় কুয়েরি ট্রাঙ্কেট
     safe_query = query[:30].strip()
     
     if total_results == 0:
@@ -760,7 +768,7 @@ async def start_back_handler(client: Client, callback_query):
         pass
     await callback_query.answer()
 
-# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (৬৪-বাইট সেфটি ক্যাপিং)
+# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (৬৪-বাইট সেফটি ক্যাপিং)
 @Client.on_callback_query(filters.regex(r"^tsearch\|"))
 async def tsearch_click_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
@@ -844,7 +852,7 @@ async def request_movie_handler(client: Client, callback_query):
         else:
             await msg_ctx.reply_text(err_msg)
 
-# ৭. এডমিনদের বাটনে ক্লিক হ্যান্ডলার
+# ७. এডমিনদের বাটনে ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^admin_req\|"))
 async def admin_request_action_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
