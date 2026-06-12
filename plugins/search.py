@@ -222,15 +222,15 @@ async def main_handler(client: Client, message: Message):
                             # [প্রিমিয়াম ব্র্যান্ডেড ওয়াটারমার্ক ক্যাপশন]
                             caption_text = (
                                 f"🎬 **ꜰɪʟᴇ ɴᴀᴍᴇ:** `{cleaned_name}`\n"
-                                f"💾 ** provide ꜱɪᴢᴇ:** `{file_size} MB`\n"
-                                f"⚡️ **ꜱᴘᴇᴇᴅ:** `Unlimited (Ultra Fast CDN)`\n\n"
+                                f"💾 ** provide 👑 ꜱɪᴢᴇ:** `{file_size} MB`\n"
+                                f"⚡️ ** do ꜱᴘᴇᴇᴅ:** `Unlimited (Ultra Fast CDN)`\n\n"
                                 f"🍿 **ᴊᴏɪɴ ᴏᴜʀ ᴍᴏᴠɪᴇ ɴᴇᴛᴡᴏʀᴋ:**\n"
                                 f"├─ 🍿 [All Movies Channel]({config.CHANNEL_LINK_1})\n"
                                 f"├─ 📢 [Backup Channel]({config.CHANNEL_LINK_2})\n"
                                 f"└─ 💬 [Movie Request Group]({config.GROUP_LINK})\n\n"
                                 f"👨‍💻 *Power and Branded by CTG Network Team*\n\n"
                                 f"⚠️ **ꜱᴇᴄᴜʀɪᴛʏ ᴀʟᴇʀᴛ:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর চ্যাট থেকে স্বয়ংক্রিয়ভাবে মুছে যাবে। তাই দ্রুত ফাইলটি আপনার **Saved Messages**-এ ফরোয়ার্ড করে রাখুন।"
+                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর চ্যাট থেকে স্বയংক্রিয়ভাবে মুছে যাবে। তাই দ্রুত ফাইলটি আপনার **Saved Messages**-এ ফরোয়ার্ড করে রাখুন।"
                             )
                             
                             bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
@@ -248,7 +248,6 @@ async def main_handler(client: Client, message: Message):
                                 ]
                             ]
                             
-                            # [সংশোধন]: unexpected keyword 'file_name' এরর দূর করতে প্যারামিটারটি রিমুভ করা হলো
                             sent_file = await client.send_cached_media(
                                 chat_id=message.chat.id,
                                 file_id=file_data["file_id"],
@@ -483,18 +482,29 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
     lang = lang.lower()
     filtered_results = []
     
-    if lang == "bangla":
-        filtered_results = [f for f in results if any(k in f["file_name"].lower() for k in ["bangla", "bengali", "ben", "bng", "বাংলা", "বেঙ্গলি"])]
-    elif lang == "hindi":
-        filtered_results = [f for f in results if any(k in f["file_name"].lower() for k in ["hindi", "hin", "dual", "multi"])]
-    elif lang == "english":
-        filtered_results = [f for f in results if any(k in f["file_name"].lower() for k in ["english", "eng", "dual", "multi"])]
-    elif lang == "tamil":
-        filtered_results = [f for f in results if any(k in f["file_name"].lower() for k in ["tamil", "tam"])]
-    elif lang == "telugu":
-        filtered_results = [f for f in results if any(k in f["file_name"].lower() for k in ["telugu", "tel"])]
-    else:
-        filtered_results = results
+    # ফাইলের নাম এবং ক্যাপশন উভয় চেক করার জন্য উন্নত লুপ (ল্যাঙ্গুয়েজ ডিটেকশন ফিক্স)
+    for f in results:
+        file_name = f.get("file_name", "").lower()
+        caption = f.get("caption", "").lower() if f.get("caption") else ""
+        searchable_text = f"{file_name} {caption}"
+        
+        if lang == "bangla":
+            if any(k in searchable_text for k in ["bangla", "bengali", "ben", "bng", "বাংলা", "বেঙ্গলি"]):
+                filtered_results.append(f)
+        elif lang == "hindi":
+            if any(k in searchable_text for k in ["hindi", "hin", "dual", "multi"]):
+                filtered_results.append(f)
+        elif lang == "english":
+            if any(k in searchable_text for k in ["english", "eng", "dual", "multi"]):
+                filtered_results.append(f)
+        elif lang == "tamil":
+            if any(k in searchable_text for k in ["tamil", "tam"]):
+                filtered_results.append(f)
+        elif lang == "telugu":
+            if any(k in searchable_text for k in ["telugu", "tel"]):
+                filtered_results.append(f)
+        else:
+            filtered_results.append(f)
 
     total_results = len(filtered_results)
     
