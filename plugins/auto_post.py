@@ -23,7 +23,28 @@ GENRE_MAP = {
     10767: "Talk", 10768: "War & Politics"
 }
 
-# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন (লোকালভাবে ডিফাইন করা হলো) ---
+# --- ফাইল কোয়ালিটি সনাক্ত করার ফাংশন ---
+def detect_quality(name: str) -> str:
+    patterns = [
+        (r'\b(2160p|4k|uhd)\b', '4K UHD'),
+        (r'\b(1080p|fhd)\b', '1080p FHD'),
+        (r'\b(720p|hd)\b', '720p HD'),
+        (r'\b(480p|sd)\b', '480p SD'),
+        (r'\b(webrip|web-rip|webdl|web-dl)\b', 'WEB-DL'),
+        (r'\b(bluray|blu-ray)\b', 'BluRay'),
+        (r'\b(hdtv)\b', 'HDTV'),
+        (r'\b(camrip|cam|hc)\b', 'CAMRip')
+    ]
+    for pattern, label in patterns:
+        if re.search(pattern, name, re.IGNORECASE):
+            if label in ['WEB-DL', 'BluRay', 'HDTV', 'CAMRip']:
+                res_match = re.search(r'\b(480p|720p|1080p|2160p)\b', name, re.IGNORECASE)
+                if res_match:
+                    return f"{res_match.group(0)} {label}"
+            return label
+    return "HD Quality"
+
+# --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন ---
 def clean_movie_title(name: str) -> str:
     if not name or not isinstance(name, str):
         return "Movie File"
@@ -63,53 +84,42 @@ def fetch_sync_url(url: str):
 
 # --- মুভির নাম থেকে বছর ও পরিচ্ছন্ন নাম আলাদা করার ফাংশন ---
 def parse_name_and_year(raw_name: str):
-    # ৪ ডিজিটের বছর খোঁজা হচ্ছে (১৯০০ থেকে ২০৯৯ পর্যন্ত)
     match = re.search(r'\b(19|20)\d{2}\b', raw_name)
     if match:
         year = match.group(0)
-        # বছরের পূর্ববর্তী অংশটিকে মুভির আসল নাম হিসেবে আলাদা করা হচ্ছে
         name_part = raw_name.split(year)[0]
-        # নাম থেকে ডট, আন্ডারস্কোর সরিয়ে পরিচ্ছন্ন করা হচ্ছে
         clean_name = name_part.replace(".", " ").replace("_", " ").replace("-", " ").strip()
-        # অতিরিক্ত ডাবল স্পেস ডিলিট
         clean_name = re.sub(r'\s+', ' ', clean_name).strip()
         return clean_name, year
     else:
-        # যদি বছর খুঁজে পাওয়া না যায়
         clean_name = clean_movie_title(raw_name)
         return clean_name, None
 
-# --- TMDb এপিআই থেকে বছর সহ মুভি বা সিরিজ (Multi Search) এর ইংলিশ মেটাডাটা ও পোস্টার সংগ্রহের ফাংশন ---
+# --- TMDb এপিআই থেকে মেটাডাটা সংগ্রহের ফাংশন ---
 async def fetch_tmdb_metadata(raw_file_name: str):
     api_key = getattr(config, "TMDB_API_KEY", None)
     if not api_key or api_key == "your_tmdb_api_key":
         return None
         
     movie_name, release_year = parse_name_and_year(raw_file_name)
-    
-    # Multi Search API ব্যবহার করা হচ্ছে যা ইংলিশে (en-US) সার্চ করবে
     search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=en-US"
     
-    # পাইথনের ইভেন্ট লুপের ব্যাকগ্রাউন্ড থ্রেড পুলে রিকোয়েস্ট পাঠানো হচ্ছে
     loop = asyncio.get_running_loop()
     data = await loop.run_in_executor(None, fetch_sync_url, search_url)
     
     if data:
         results = data.get("results", [])
         if results:
-            # বছর অনুযায়ী নিখুঁত ম্যাচিং ফিল্টার করা হচ্ছে
             matched_item = None
             if release_year:
                 for item in results:
                     media_type = item.get("media_type")
-                    # মুভির জন্য release_date এবং সিরিজের জন্য first_air_date চেক করা হচ্ছে
                     date_key = "release_date" if media_type == "movie" else "first_air_date"
                     item_date = item.get(date_key, "")
                     if item_date and item_date.startswith(release_year):
                         matched_item = item
                         break
                         
-            # যদি বছর দিয়ে কোনো ম্যাচ না পাওয়া যায় বা ফাইলে বছর না থাকে, তবে প্রথম মুভি বা সিরিজটি নেওয়া হবে
             if not matched_item:
                 valid_results = [r for r in results if r.get("media_type") in ["movie", "tv"]]
                 if valid_results:
@@ -119,29 +129,26 @@ async def fetch_tmdb_metadata(raw_file_name: str):
                 return matched_item
     return None
 
-# --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হওয়া মাত্রই স্বয়ংক্রিয়ভাবে ক্যাচ করার হ্যান্ডলার ---
+# --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হ্যান্ডলার ---
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_channel_post_handler(client: Client, message: Message):
-    # ডাটাবেজ সেভ সম্পন্ন হওয়ার জন্য সামান্য অপেক্ষা
     await asyncio.sleep(2)
     
-    # ফাইলের তথ্য সংগ্রহ
     media = message.document or message.video
     file_name = media.file_name
     file_size_mb = round(media.file_size / (1024 * 1024), 2)
     
-    # মঙ্গোডিবি থেকে এই ফাইলের অবজেক্ট আইডি খোঁজা
     from database import file_cols
     db_id = None
     
-    # ১. প্রথমে ফাইল ইউনিক আইডি দিয়ে খোঁজা হচ্ছে
+    # ১. প্রথমে ফাইল ইউনিক আইডি দিয়ে খোঁজ করা হচ্ছে
     for col in file_cols:
         doc = await col.find_one({"file_id": media.file_id})
         if doc:
             db_id = str(doc["_id"])
             break
             
-    # ২. টেস্ট করার সুবিধার্থে: ফাইল আইডি দিয়ে না পাওয়া গেলে নাম ও সাইজ দিয়ে ডাটাবেজে ডুপ্লিকেট খোঁজা হচ্ছে
+    # ২. নাম ও সাইজ দিয়ে ডাটাবেজে ডুপ্লিকেট খোঁজ করা হচ্ছে
     if not db_id:
         for col in file_cols:
             doc = await col.find_one({"file_name": file_name, "file_size": media.file_size})
@@ -149,35 +156,65 @@ async def auto_channel_post_handler(client: Client, message: Message):
                 db_id = str(doc["_id"])
                 break
             
-    # ৩. যদি ফাইলটি ডাটাবেজে না থাকে, তবে নতুন ফাইল হিসেবে সেভ করা হচ্ছে
+    # ৩. ডাটাবেজে না থাকলে নতুন ফাইল হিসেবে সেভ করা হচ্ছে
     if not db_id:
         db_id = await save_file(file_name, media.file_size, media.file_id, message.chat.id, message.id)
         
     if not db_id:
-        return  # আইডি কোনোভাবেই না পাওয়া গেলে পোস্ট করা হবে না
+        return
         
-    # টিএমডিবির জন্য নাম পরিচ্ছন্ন করা হচ্ছে
     cleaned_title = clean_movie_title(file_name)
-    
-    # TMDb থেকে বছরসহ নিখুঁত ম্যাচিং তথ্য সংগ্রহ (মুভি ও ওয়েব সিরিজ ক্যাটাগরি ডিটেকশন)
     movie_meta = await fetch_tmdb_metadata(file_name)
-    
     bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
     
-    # আয়ের সুরক্ষায় app_ প্রিফিক্স ব্যবহার করা হলো, যা মিনি অ্যাপ বিজ্ঞাপন নিশ্চিত করবে
-    download_url = f"https://t.me/{bot_username}?start=app_{db_id}"
+    # ডুপ্লিকেট পোস্ট এড়াতে ও একাধিক কোয়ালিটি মার্জ করতে মঙ্গোডিবিতে ট্র্যাকিং কালেকশন ব্যবহার
+    db = file_cols[0].database
+    posts_col = db["channel_posts"]
     
-    buttons = [
-        [
-            InlineKeyboardButton("🍿 One-Click Download Link 🍿", url=download_url)
-        ]
-    ]
-    
-    # যদি TMDb-তে তথ্য পাওয়া যায়
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
+        tmdb_id = movie_meta.get("id")
+        unique_key = f"{media_type}_{tmdb_id}"
+    else:
+        # টিএমডিবি ডাটা না থাকলে নাম ভিত্তিক ইউনিক কি তৈরি
+        slug = re.sub(r'[^a-z0-9]', '', cleaned_title.lower())
+        unique_key = f"raw_{slug}"
         
-        # মুভি নাকি ওয়েব সিরিজ তা আলাদাভাবে ফরম্যাটিং করা হচ্ছে (সম্পূর্ণ ইংরেজিতে)
+    # পূর্বের কোনো পোস্ট এই মুভি/সিরিজের জন্য করা হয়েছে কিনা তা চেক করা হচ্ছে
+    existing_post = await posts_col.find_one({"_id": unique_key})
+    
+    current_quality = detect_quality(file_name)
+    file_info = {
+        "db_id": db_id,
+        "file_name": file_name,
+        "size": file_size_mb,
+        "quality": current_quality
+    }
+    
+    if existing_post:
+        files_list = existing_post.get("files", [])
+        # ডুপ্লিকেট এন্ট্রি এড়াতে চেক
+        if not any(f["db_id"] == db_id for f in files_list):
+            files_list.append(file_info)
+            await posts_col.update_one({"_id": unique_key}, {"$set": {"files": files_list}})
+    else:
+        files_list = [file_info]
+        await posts_col.insert_one({"_id": unique_key, "files": files_list, "msg_id": None})
+        
+    # বাটন ও সাইজের তথ্য ডাইনামিকালি সাজানো
+    buttons = []
+    size_parts = []
+    for f in files_list:
+        download_url = f"https://t.me/{bot_username}?start=app_{f['db_id']}"
+        btn_label = f"🍿 Download [{f['quality']} - {f['size']} MB] 🍿"
+        buttons.append([InlineKeyboardButton(btn_label, url=download_url)])
+        size_parts.append(f"`{f['quality']}: {f['size']} MB`")
+        
+    size_str = " | ".join(size_parts)
+    
+    # ক্যাপশন তৈরি (টিএমডিবি ডাটা থাকলে)
+    if movie_meta:
+        media_type = movie_meta.get("media_type", "movie")
         if media_type == "tv":
             title_raw = movie_meta.get("name") or movie_meta.get("original_name") or file_name
             year = movie_meta.get("first_air_date", "N/A")[:4]
@@ -189,61 +226,87 @@ async def auto_channel_post_handler(client: Client, message: Message):
             header_text = "🎬 **NEW MOVIE ADDED!** 🎬"
             title_label = "Movie Name"
             
-        # [ইউনিকোড স্ক্রিপ্ট ডিটেক্টর]: যদি নামের মধ্যে কোনো বাংলা হরফ থাকে, তবে ইংরেজি নামটি ব্যবহার করা হবে
         if re.search(r'[\u0980-\u09ff]', title_raw):
             title = cleaned_title
         else:
             title = title_raw
             
         rating = movie_meta.get("vote_average", "N/A")
-        overview = movie_meta.get("overview") or "No storyline available."
-        poster_path = movie_meta.get("poster_path")
-        
-        # [ক্যাটাগরি রিডার]: আইডি কোড থেকে ম্যাপ করে ক্যাটাগরি আলাদা করার লজিক
         genre_ids = movie_meta.get("genre_ids", [])
         genre_names = [GENRE_MAP.get(gid) for gid in genre_ids if GENRE_MAP.get(gid)]
         genres = ", ".join(genre_names) if genre_names else "N/A"
+        poster_path = movie_meta.get("poster_path")
         
         caption_text = (
             f"{header_text}\n\n"
             f"📝 **{title_label}:** `{title}` ({year})\n"
             f"🌟 **Rating:** ⭐ `{rating}/10`\n"
             f"🎭 **Genre:** `{genres}`\n"
-            f"💾 **Size:** `{file_size_mb} MB`\n\n"
-            f"📖 **Storyline (Overview):**\n"
-            f"_{overview[:400]}..._\n\n"
+            f"💾 **Size:** {size_str}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🍿 Click the button below to download instantly from our bot!"
+            f"🍿 Select your preferred quality below to download instantly!"
+        )
+    else:
+        # সাধারণ টেক্সট ক্যাপশন (টিএমডিবি ডাটা না থাকলে)
+        poster_path = None
+        caption_text = (
+            f"🎬 **NEW FILE ADDED!** 🎬\n\n"
+            f"📝 **File Name:** `{cleaned_title}`\n"
+            f"💾 **Size:** {size_str}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🍿 Select your preferred quality below to download instantly!"
         )
         
-        # যদি পোস্টার ইমেজ থাকে তবে ফটো আকারে পোস্ট করা হবে
-        if poster_path:
-            poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}"
-            try:
-                await client.send_photo(
+    # এডিটিং বা নতুন পোস্ট করার প্রক্রিয়া
+    sent_msg = None
+    if existing_post and existing_post.get("msg_id"):
+        msg_id = existing_post["msg_id"]
+        try:
+            if poster_path:
+                await client.edit_message_caption(
                     chat_id=config.UPDATE_CHANNEL_ID,
-                    photo=poster_url,
+                    message_id=msg_id,
                     caption=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
-                return
-            except Exception as e:
-                print(f"Failed to send poster photo: {e}")
-                
-    # যদি TMDb-তে কোনো তথ্য না পাওয়া যায় বা ফটো ফেইল করে, তবে সাধারণ টেক্সট আকারে পোস্ট হবে (সম্পূর্ণ ইংরেজিতে)
-    cleaned_title = clean_movie_title(file_name)
-    fallback_text = (
-        f"🎬 **NEW FILE ADDED!** 🎬\n\n"
-        f"📝 **File Name:** `{cleaned_title}`\n"
-        f"💾 **File Size:** `{file_size_mb} MB`\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🍿 Click the button below to download instantly from our bot!"
-    )
-    try:
-        await client.send_message(
-            chat_id=config.UPDATE_CHANNEL_ID,
-            text=fallback_text,
-            reply_markup=InlineKeyboardMarkup(buttons)
+            else:
+                await client.edit_message_text(
+                    chat_id=config.UPDATE_CHANNEL_ID,
+                    message_id=msg_id,
+                    text=caption_text,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            return
+        except Exception as e:
+            # পোস্ট এডিট করতে ব্যর্থ হলে (যেমন: ডিলিট হয়ে থাকলে) নতুন করে পাঠানো হবে
+            print(f"Failed to edit message {msg_id}: {e}. Sending new message...")
+            
+    # নতুন পোস্ট পাঠানো হচ্ছে
+    if poster_path:
+        poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}"
+        try:
+            sent_msg = await client.send_photo(
+                chat_id=config.UPDATE_CHANNEL_ID,
+                photo=poster_url,
+                caption=caption_text,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        except Exception as e:
+            print(f"Failed to send poster photo: {e}")
+            
+    if not sent_msg:
+        try:
+            sent_msg = await client.send_message(
+                chat_id=config.UPDATE_CHANNEL_ID,
+                text=caption_text,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        except Exception as e:
+            print(f"Failed to send update message: {e}")
+            
+    if sent_msg:
+        await posts_col.update_one(
+            {"_id": unique_key},
+            {"$set": {"msg_id": sent_msg.id, "files": files_list}},
+            upsert=True
         )
-    except Exception as e:
-        print(f"Failed to send fallback update message: {e}")
