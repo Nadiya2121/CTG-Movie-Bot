@@ -22,8 +22,8 @@ LOG_CHANNEL = -1003973741130      # আপনার রিকোয়েস্ট 
 
 # --- মাল্টিপল ডাটাবেজ কনফিগারেশন (Multi-DB Config) ---
 
-# ১. ইউজার ডাটাবেজ (এখানে শুধুমাত্র ইউজার, গ্রুপ ও প্রিমিয়াম ডাটা সেভ থাকবে)
-USER_DATABASE_URI = "mongodb+srv://hahema9427:hahema9427@cluster0.3mf49.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+# ১. ইউজার ডাটাবেজ (এখানে ২য় ডাটাবেজের লিঙ্কটি বসিয়ে দেওয়া হলো, যা সম্পূর্ণ খালি এবং রাইট লক-মুক্ত)
+USER_DATABASE_URI = "mongodb+srv://xanoye1655:xanoye1655@cluster0.toknq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
 # ২. ফাইল বা মুভি ডাটাবেজগুলোর তালিকা (মোট ৪টি ডাটাবেজ সচল করা হলো)
 # ১মটি আপনার মূল ডাটাবেজ (যাতে ২ লাখ মুভি আছে) এবং বাকি ৩টি আপনার নতুন পাঠানো ডাটাবেজ।
@@ -34,7 +34,7 @@ FILE_DATABASE_URIS = [
     "mongodb+srv://hepemo5263:hepemo5263@cluster0.5vugv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # ৪র্থ ফাইল ডিবি (নতুন)
 ]
 
-# ৩. প্রতিটি ফাইল ডাটাবেজের সর্বোচ্চ স্টোরেজ লিমিট (আপনার নির্দেশ অনুযায়ী ৪০০ এমবি সেট করা হয়েছে)
+# ৩. প্রতিটি ফাইল ডাটাবেজের সর্বোচ্চ স্টোরেজ লিমিট (আপনার নির্দেশ অনুযায়ী ৩০০ এমবি সেট করা হয়েছে)
 DB_LIMIT_MB = 300
 
 # --- আর্নিং ও মিনি অ্যাপ কনফিগারেশন ---
