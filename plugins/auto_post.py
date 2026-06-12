@@ -25,7 +25,7 @@ GENRE_MAP = {
     10767: "Talk", 10768: "War & Politics"
 }
 
-# --- চ্যাট আইডি ফরম্যাটিং হেল্পার (স্ট্রিং টু ইন্টিজার এরর এড়াতে) ---
+# --- চ্যাট আইডি ফরম্যাটিং হেল্পার ---
 def get_chat_id(chat_id_val):
     if isinstance(chat_id_val, str):
         if re.match(r'^-?\d+$', chat_id_val):
@@ -90,18 +90,60 @@ def fetch_sync_url(url: str):
         print(f"Sync fetch error: {e}")
     return None
 
-# --- মুভির নাম থেকে বছর ও পরিচ্ছন্ন নাম আলাদা করার ফাংশন ---
+# --- জটিল ফাইলের নাম থেকে আসল সার্চ কোয়েরি এবং বছর আলাদা করার উন্নত ফাংশন ---
 def parse_name_and_year(raw_name: str):
-    match = re.search(r'\b(19|20)\d{2}\b', raw_name)
-    if match:
-        year = match.group(0)
-        name_part = raw_name.split(year)[0]
-        clean_name = name_part.replace(".", " ").replace("_", " ").replace("-", " ").strip()
-        clean_name = re.sub(r'\s+', ' ', clean_name).strip()
-        return clean_name, year
+    # ছোট হাতের অক্ষরে রূপান্তর
+    name = raw_name.lower()
+    
+    # টেলিগ্রাম ইউজারনেম ও লিংক বাদ দেওয়া
+    name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
+    name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
+    
+    # প্রমোশনাল লেখা ও কমন ইমোজি বাদ দেওয়া
+    promo_patterns = [
+        r'\bjoin\b', r'\bjoin us\b', r'\btelegram\b', r'\bchannel\b', r'\blink\b', r'\blinks\b',
+        r'💎', r'📢', r'🍿', r'🎬', r'📺'
+    ]
+    for pat in promo_patterns:
+        name = re.sub(pat, '', name, flags=re.IGNORECASE)
+        
+    # বছর খোঁজা (১৯০০ থেকে ২০৯৯)
+    year_match = re.search(r'\b(19|20)\d{2}\b', name)
+    year = year_match.group(0) if year_match else None
+    
+    # বছর পাওয়া গেলে তার পূর্ববর্তী অংশকে নাম হিসেবে নেওয়া
+    if year:
+        name_part = name.split(year)[0]
     else:
-        clean_name = clean_movie_title(raw_name)
-        return clean_name, None
+        name_part = name
+        
+    # ওয়েব সিরিজ সনাক্তকরণ ও অতিরিক্ত এপিসোড/সিজন ডিটেইলস ছেঁটে ফেলা (যেমন: S03E01, S3, Ep1 ইত্যাদি)
+    season_match = re.search(r'\b(s\d{1,2}e\d{1,2}|s\d{1,2}|ep\d{1,2}|episode\s*\d{1,2})\b', name_part, re.IGNORECASE)
+    if season_match:
+        name_part = name_part.split(season_match.group(0))[0]
+        
+    # রিলিজ গ্রুপ, কোডেক এবং ক্লাটার কি-ওয়ার্ড ছেঁটে ফেলা
+    clutter_keywords = [
+        r'\b(720p|1080p|2160p|4k|uhd|sd|hd)\b',
+        r'\b(webrip|web-rip|webdl|web-dl|nf|netflix|bluray|blu-ray|hdtv|camrip|cam|rip)\b',
+        r'\b(hindi|english|bengali|tamil|telugu|malayalam|kannada|dual|multi|audio|aac5|aac|dd5|dd|esub|sub|subtitles|subs)\b',
+        r'\b(x264|x265|hevc|h264|h265|10bit|8bit)\b',
+        r'\b(eonmovies|yts|psa|pahe|galaxyrg|megusta|qxr)\b',
+        r'\b(raw|undekha|clean|uncut|proper|internal|rerip)\b'
+    ]
+    for pat in clutter_keywords:
+        name_part = re.sub(pat, ' ', name_part, flags=re.IGNORECASE)
+        
+    # ডট, ড্যাশ, আন্ডারস্কোর স্পেস দিয়ে প্রতিস্থাপন
+    name_part = name_part.replace(".", " ").replace("_", " ").replace("-", " ")
+    
+    # অতিরিক্ত স্পেস রিমুভ করে চূড়ান্ত নাম প্রস্তুত
+    clean_name = re.sub(r'\s+', ' ', name_part).strip()
+    
+    # ট্রেইলিং এবং/অর কনজাংশন বাদ দেওয়া (সার্চের সুবিধার্থে)
+    clean_name = re.sub(r'\b(and|or|the|in|of|for|with|by|at|to)\b$', '', clean_name).strip()
+    
+    return clean_name, year
 
 # --- TMDb এপিআই থেকে মেটাডাটা সংগ্রহের ফাংশন ---
 async def fetch_tmdb_metadata(raw_file_name: str):
@@ -110,6 +152,11 @@ async def fetch_tmdb_metadata(raw_file_name: str):
         return None
         
     movie_name, release_year = parse_name_and_year(raw_file_name)
+    
+    # যদি মেটাডাটা সার্চ কি-ওয়ার্ড একেবারেই খালি হয়, তবে মূল টাইটেল ব্যবহার হবে
+    if not movie_name:
+        movie_name = clean_movie_title(raw_file_name)
+        
     search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=en-US"
     
     loop = asyncio.get_running_loop()
@@ -140,7 +187,6 @@ async def fetch_tmdb_metadata(raw_file_name: str):
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হ্যান্ডলার ---
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_channel_post_handler(client: Client, message: Message):
-    # ডাটাবেজ প্রসেস সম্পন্ন হওয়ার জন্য সামান্য বিরতি
     await asyncio.sleep(2)
     
     media = message.document or message.video
@@ -149,14 +195,14 @@ async def auto_channel_post_handler(client: Client, message: Message):
     
     db_id = None
     
-    # ১. ফাইল ইউনিক আইডি দিয়ে খোঁজা হচ্ছে (সবগুলো কালেকশনে)
+    # ১. ফাইল ইউনিক আইডি দিয়ে খোঁজা হচ্ছে
     for col in file_cols:
         doc = await col.find_one({"file_id": media.file_id})
         if doc:
             db_id = str(doc["_id"])
             break
             
-    # ২. নাম ও সাইজ দিয়ে ডাটাবেজে ডুপ্লিকেট খোঁজা হচ্ছে
+    # ২. নাম ও সাইজ দিয়ে ডুপ্লিকেট খোঁজা হচ্ছে
     if not db_id:
         for col in file_cols:
             doc = await col.find_one({"file_name": file_name, "file_size": media.file_size})
@@ -164,7 +210,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
                 db_id = str(doc["_id"])
                 break
             
-    # ৩. ডাটাবেজে না থাকলে নতুন ফাইল হিসেবে সেভ করা হচ্ছে
+    # ৩. নতুন ফাইল হিসেবে সেভ করা হচ্ছে
     if not db_id:
         try:
             db_id = await save_file(file_name, media.file_size, media.file_id, message.chat.id, message.id)
@@ -179,7 +225,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
     movie_meta = await fetch_tmdb_metadata(file_name)
     bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
     
-    # ইউনিক ট্র্যাকিং কি (Key) তৈরি করা হচ্ছে
+    # ইউনিক কি (Key) নির্ধারণ
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
         tmdb_id = movie_meta.get("id")
@@ -196,7 +242,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
         "quality": current_quality
     }
     
-    # ডেডিকেটেড ও রাইট-সক্ষম 'user_db' থেকে কালেকশন এক্সেস করা হচ্ছে
     posts_col = user_db["channel_posts"]
     files_list = [file_info]
     existing_post = None
@@ -206,7 +251,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
         existing_post = await posts_col.find_one({"_id": unique_key})
         if existing_post:
             files_list = existing_post.get("files", [])
-            # ডুপ্লিকেট ডাটা এন্ট্রি এড়াতে চেক করা হচ্ছে
             if not any(f["db_id"] == db_id for f in files_list):
                 files_list.append(file_info)
                 await posts_col.update_one({"_id": unique_key}, {"$set": {"files": files_list}})
@@ -218,7 +262,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         files_list = [file_info]
         use_aggregation = False
         
-    # ডাইনামিক বাটন এবং ফাইল সাইজ টেক্সট সাজানো হচ্ছে
+    # ডাইনামিক বাটন এবং সাইজ সাজানো
     buttons = []
     size_parts = []
     for f in files_list:
@@ -229,7 +273,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         
     size_str = " | ".join(size_parts)
     
-    # ক্যাপশন তৈরি (টিএমডিবি ডাটা থাকলে)
+    # ক্যাপশন ফরম্যাটিং (টিএমডিবি ডাটা থাকলে)
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
         if media_type == "tv":
@@ -264,7 +308,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
             f"🍿 Select your preferred quality below to download instantly!"
         )
     else:
-        # ফলব্যাক সাধারণ ক্যাপশন
         poster_path = None
         caption_text = (
             f"🎬 **NEW FILE ADDED!** 🎬\n\n"
@@ -277,7 +320,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
     update_chat_id = get_chat_id(config.UPDATE_CHANNEL_ID)
     sent_msg = None
     
-    # এডিট করার চেষ্টা করা হচ্ছে (যদি আগের মেসেজ আইডি থাকে)
+    # আগের মেসেজ আইডি থাকলে এডিট করার চেষ্টা
     if use_aggregation and existing_post and existing_post.get("msg_id"):
         msg_id = existing_post["msg_id"]
         try:
@@ -295,9 +338,9 @@ async def auto_channel_post_handler(client: Client, message: Message):
                     text=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
-            return  # এডিট সফল হলে এখানেই সম্পন্ন হবে
+            return
         except Exception as e:
-            print(f"Failed to edit message {msg_id}: {e}. Posting a new update message instead.")
+            print(f"Failed to edit message {msg_id}: {e}. Sending as a new post...")
             
     # নতুন পোস্ট পাঠানোর প্রক্রিয়া
     if poster_path:
@@ -322,7 +365,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         except Exception as e:
             print(f"Failed to send update message: {e}")
             
-    # ডেটাবেজে পোস্টের মেসেজ আইডি আপডেট রাখা হচ্ছে
+    # মেসেজ আইডি আপডেট রাখা হচ্ছে
     if sent_msg and use_aggregation:
         try:
             await posts_col.update_one(
