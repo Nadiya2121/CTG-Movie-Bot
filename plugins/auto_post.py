@@ -66,7 +66,7 @@ def parse_name_and_year(raw_name: str):
         clean_name = clean_movie_title(raw_name)
         return clean_name, None
 
-# --- TMDb এপিআই থেকে বছর সহ মুভি বা সিরিজ (Multi Search) এর বাংলা মেটাডাটা ও পোস্টার সংগ্রহের ফাংশন ---
+# --- TMDb এপিআই থেকে বছর সহ মুভি বা সিরিজ (Multi Search) এর ইংলিশ মেটাডাটা ও পোস্টার সংগ্রহের ফাংশন ---
 async def fetch_tmdb_metadata(raw_file_name: str):
     api_key = getattr(config, "TMDB_API_KEY", None)
     if not api_key or api_key == "your_tmdb_api_key":
@@ -74,8 +74,8 @@ async def fetch_tmdb_metadata(raw_file_name: str):
         
     movie_name, release_year = parse_name_and_year(raw_file_name)
     
-    # Multi Search API ব্যবহার করা হচ্ছে যা মুভি এবং ওয়েব সিরিজ একসাথে সার্চ করতে পারে
-    search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=bn-BD"
+    # Multi Search API ব্যবহার করা হচ্ছে যা ইংলিশে (en-US) সার্চ করবে
+    search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=en-US"
     
     # পাইথনের ইভেন্ট লুপের ব্যাকগ্রাউন্ড থ্রেড পুলে রিকোয়েস্ট পাঠানো হচ্ছে
     loop = asyncio.get_event_loop()
@@ -103,21 +103,11 @@ async def fetch_tmdb_metadata(raw_file_name: str):
                     matched_item = valid_results[0]
                     
             if matched_item:
-                media_type = matched_item.get("media_type")
-                item_id = matched_item.get("id")
-                
-                # যদি বাংলা কাহিনী সংক্ষেপ (Overview) খালি থাকে, তবে ইংলিশ ফলব্যাক নেওয়া হবে
-                if not matched_item.get("overview") or matched_item.get("overview").strip() == "":
-                    eng_url = f"https://api.themoviedb.org/3/{media_type}/{item_id}?api_key={api_key}&language=en-US"
-                    eng_data = await loop.run_in_executor(None, fetch_sync_url, eng_url)
-                    if eng_data:
-                        matched_item["overview"] = eng_data.get("overview")
-                            
                 return matched_item
     return None
 
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হওয়া মাত্রই স্বয়ংক্রিয়ভাবে ক্যাচ করার হ্যান্ডলার ---
-@Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video)) # পাইরোগ্রাম স্ট্যান্ডার্ড অন-মেসেজ রিস্টোর করা হলো
+@Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_channel_post_handler(client: Client, message: Message):
     # ডাটাবেজ সেভ সম্পন্ন হওয়ার জন্য সামান্য অপেক্ষা
     await asyncio.sleep(2)
@@ -143,15 +133,20 @@ async def auto_channel_post_handler(client: Client, message: Message):
     if not db_id:
         return  # আইডি না পাওয়া গেলে পোস্ট করা হবে না
         
+    # টিএমডিবির জন্য নাম পরিচ্ছন্ন করা হচ্ছে
+    cleaned_title = clean_movie_title(file_name)
+    
     # TMDb থেকে বছরসহ নিখুঁত ম্যাচিং তথ্য সংগ্রহ (মুভি ও ওয়েব সিরিজ ক্যাটাগরি ডিটেকশন)
     movie_meta = await fetch_tmdb_metadata(file_name)
     
     bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
-    download_url = f"https://t.me/{bot_username}?start=get_{db_id}"
+    
+    # আয়ের সুরক্ষায় app_ প্রিফিক্স ব্যবহার করা হলো, যা মিনি অ্যাপ বিজ্ঞাপন নিশ্চিত করবে
+    download_url = f"https://t.me/{bot_username}?start=app_{db_id}"
     
     buttons = [
         [
-            InlineKeyboardButton("🍿 ওয়ান-ক্লিক ডাউনলোড লিংক 🍿", url=download_url)
+            InlineKeyboardButton("🍿 One-Click Download Link 🍿", url=download_url)
         ]
     ]
     
@@ -159,31 +154,37 @@ async def auto_channel_post_handler(client: Client, message: Message):
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
         
-        # মুভি নাকি ওয়েব সিরিজ তা আলাদাভাবে ফরম্যাটিং করা হচ্ছে
+        # মুভি নাকি ওয়েব সিরিজ তা আলাদাভাবে ফরম্যাটিং করা হচ্ছে (সম্পূর্ণ ইংরেজিতে)
         if media_type == "tv":
-            title = movie_meta.get("name") or movie_meta.get("original_name") or file_name
+            title_raw = movie_meta.get("name") or movie_meta.get("original_name") or file_name
             year = movie_meta.get("first_air_date", "N/A")[:4]
-            header_text = "📺 **নতুন ওয়েব সিরিজ যুক্ত করা হয়েছে!** 📺"
-            title_label = "সিরিজের নাম"
+            header_text = "📺 **NEW WEB SERIES ADDED!** 📺"
+            title_label = "Series Name"
         else:
-            title = movie_meta.get("title") or movie_meta.get("original_title") or file_name
+            title_raw = movie_meta.get("title") or movie_meta.get("original_title") or file_name
             year = movie_meta.get("release_date", "N/A")[:4]
-            header_text = "🎬 **নতুন মুভি যুক্ত করা হয়েছে!** 🎬"
-            title_label = "মুভির নাম"
+            header_text = "🎬 **NEW MOVIE ADDED!** 🎬"
+            title_label = "Movie Name"
+            
+        # [ইউনিকোড স্ক্রিপ্ট ডিটেক্টর]: যদি নামের মধ্যে কোনো বাংলা হরফ থাকে, তবে সেটি বাদ দিয়ে সুন্দর ইংরেজি নামটি ব্যবহার করা হবে
+        if re.search(r'[\u0980-\u09ff]', title_raw):
+            title = cleaned_title
+        else:
+            title = title_raw
             
         rating = movie_meta.get("vote_average", "N/A")
-        overview = movie_meta.get("overview") or "কোনো কাহিনী সংক্ষেপ পাওয়া যায়নি।"
+        overview = movie_meta.get("overview") or "No storyline available."
         poster_path = movie_meta.get("poster_path")
         
         caption_text = (
             f"{header_text}\n\n"
             f"📝 **{title_label}:** `{title}` ({year})\n"
-            f"🌟 **রেটিং:** ⭐ `{rating}/10`\n"
-            f"💾 **সাইজ:** `{file_size_mb} MB`\n\n"
-            f"📖 **কাহিনী সংক্ষেপ (Overview):**\n"
+            f"🌟 **Rating:** ⭐ `{rating}/10`\n"
+            f"💾 **Size:** `{file_size_mb} MB`\n\n"
+            f"📖 **Storyline (Overview):**\n"
             f"_{overview[:400]}..._\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🍿 সরাসরি বটের ইনবক্স থেকে ওয়ান-ক্লিকে ডাউনলোড করতে নিচের বাটনে চাপ দিন।"
+            f"🍿 Click the button below to download instantly from our bot!"
         )
         
         # যদি পোস্টার ইমেজ থাকে তবে ফটো আকারে পোস্ট করা হবে
@@ -200,14 +201,13 @@ async def auto_channel_post_handler(client: Client, message: Message):
             except Exception as e:
                 print(f"Failed to send poster photo: {e}")
                 
-    # যদি TMDb-তে কোনো তথ্য না পাওয়া যায় বা ফটো ফেইল করে, তবে সাধারণ টেক্সট আকারে পোস্ট হবে
-    cleaned_title = clean_movie_title(file_name)
+    # যদি TMDb-তে কোনো তথ্য না পাওয়া যায় বা ফটো ফেইল করে, তবে সাধারণ টেক্সট আকারে পোস্ট হবে (সম্পূর্ণ ইংরেজিতে)
     fallback_text = (
-        f"🎬 **নতুন ফাইল যুক্ত করা হয়েছে!** 🎬\n\n"
-        f"📝 **ফাইলের নাম:** `{cleaned_title}`\n"
-        f"💾 **ফাইলের সাইজ:** `{file_size_mb} MB`\n\n"
+        f"🎬 **NEW FILE ADDED!** 🎬\n\n"
+        f"📝 **File Name:** `{cleaned_title}`\n"
+        f"💾 **File Size:** `{file_size_mb} MB`\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🍿 সরাসরি বটের ইনবক্স থেকে ওয়ান-ক্লিকে ডাউনলোড করতে নিচের বাটনে চাপ দিন।"
+        f"🍿 Click the button below to download instantly from our bot!"
     )
     try:
         await client.send_message(
