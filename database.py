@@ -43,21 +43,21 @@ BLOCKED_DBS = set()
 async def get_active_files_collection():
     """
     ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনফিগ লিমিট) এর নিচে আছে,
-    সেটির কালেকশন রিটার্ন করবে। সবগুলো ফুল হয়ে গেলে প্রথম সচল ডাটাবেজটি রিটার্ন করবে।
+    সেটির কালেকশন রিটার্ন করবে। ১ম ফাইল ডাটাবেজটি (Index 0) নতুন ফাইল সেভের ক্ষেত্রে সম্পূর্ণ স্কিপ করা হবে।
     """
-    if not file_cols:
-        return None
+    if not file_cols or len(file_cols) < 2:
+        return None if not file_cols else file_cols[0]
 
-    for idx, db in enumerate(file_dbs):
-        # যদি কোনো ডাটাবেজ অলরেডি ফেইলওভার বা রাইট লকড অবস্থায় থাকে তবে স্কিপ করবে
+    # [সংশোধন]: ১ম ফাইল ডাটাবেজ (Index 0) সম্পূর্ণ স্কিপ করা হচ্ছে এবং ২য় ডাটাবেজ (Index 1) থেকে শুরু করা হচ্ছে
+    for idx in range(1, len(file_dbs)):
         if idx in BLOCKED_DBS:
             continue
             
         # যদি মেমোরিতে এই ডাটাবেজের সাইজ আগে থেকে লোড করা না থাকে, তবে একবার dbstats দিয়ে রিড করা হবে
         if idx not in DB_SIZES_CACHE:
             try:
+                db = file_dbs[idx]
                 stats = await db.command("dbstats")
-                # storageSize এবং indexSize যোগ করে প্রকৃত স্পেস ব্যবহার বের করা হচ্ছে
                 used_bytes = stats.get("storageSize", 0) + stats.get("indexSize", 0)
                 used_mb = used_bytes / (1024 * 1024)
                 DB_SIZES_CACHE[idx] = used_mb
@@ -69,12 +69,12 @@ async def get_active_files_collection():
         if DB_SIZES_CACHE[idx] < config.DB_LIMIT_MB:
             return file_cols[idx]
             
-    # যদি সবগুলোই ৪০০ এমবি লিমিট পার হয়ে যায়, তবে ব্লকড বাদে প্রথম সচল ডাটাবেজটি নেওয়া হবে
-    available_indices = [i for i in range(len(file_cols)) if i not in BLOCKED_DBS]
+    # যদি ২য়, ৩য় ও ৪র্থ সব পূর্ণ হয়ে যায়, তবে ব্লকড বাদে প্রথম সচল ডাটাবেজটি নেওয়া হবে (অবশ্যই ২য় থেকে শুরু)
+    available_indices = [i for i in range(1, len(file_cols)) if i not in BLOCKED_DBS]
     if available_indices:
         return file_cols[available_indices[0]]
         
-    return file_cols[-1]
+    return file_cols[1] # ২য় ফাইল ডাটাবেজ (Index 1)
 
 # ==========================================
 #  ৩. ইউজার ও গ্রুপ ম্যানেজমেন্ট (Dedicated DB)
@@ -112,7 +112,7 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
     
     file_name = file_name if file_name else f"Video_File_{file_size}"
     
-    # ডুপ্লিকেট প্রতিরোধের জন্য সব ফাইল ডাটাবেজে ফাইলটি ইতিমধ্যে আছে কিনা চেক করা হচ্ছে
+    # ডুপ্লিকেট প্রতিরোধের জন্য সব ফাইল ডাটাবেজে ফাইলটি ইতিমধ্যে আছে কিনা চেক করা হচ্ছে (DB1 সহ সার্চ হবে)
     duplicate = False
     for col in file_cols:
         exists = await col.find_one({
@@ -135,11 +135,15 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
             "message_id": message_id
         }
         
-        # বর্তমান কোন কালেকশনে সেভ করার সিদ্ধান্ত নেওয়া হয়েছে তার ইনডেক্স
-        start_idx = file_cols.index(active_col) if active_col in file_cols else 0
+        # বর্তমান কোন কালেকশনে সেভ করার সিদ্ধান্ত নেওয়া হয়েছে তার ইনডেক্স (অবশ্যই ১ বা তার বেশি হতে হবে)
+        start_idx = file_cols.index(active_col) if active_col in file_cols else 1
+        if start_idx == 0:
+            start_idx = 1
         
-        # রাউন্ড-রবিন সিকোয়েন্সে ট্রাই করার ব্যবস্থা
-        db_sequence = list(range(start_idx, len(file_cols))) + list(range(0, start_idx))
+        # রাউন্ড-রবিন সিকোয়েন্সে ট্রাই করার ব্যবস্থা (১ম ডাটাবেজ তথা Index 0 সম্পূর্ণ স্কিপড)
+        db_sequence = list(range(start_idx, len(file_cols))) + list(range(1, start_idx))
+        if not db_sequence:
+            db_sequence = [1]
         
         for idx in db_sequence:
             col = file_cols[idx]
@@ -180,7 +184,7 @@ async def search_db(query):
     results = []
     seen_ids = set() # ডুপ্লিকেট এড়ানোর জন্য ইউনিক ফাইল ট্র্যাক করা
     
-    # সবগুলো ফাইল ডাটাবেজে সমান্তরালভাবে সার্চ চালানো হচ্ছে
+    # সবগুলো ফাইল ডাটাবেজে সমান্তরালভাবে সার্চ চালানো হচ্ছে (১ম ডাটাবেজের ফাইলও সার্চে আসবে)
     for col in file_cols:
         cursor = col.find(query_filter).limit(30)
         async for doc in cursor:
@@ -223,43 +227,23 @@ async def get_file_by_db_id(db_id):
 # ==========================================
 
 async def get_detailed_stats():
-    # সবগুলো ফাইল ডাটাবেজ থেকে মোট ফাইলের সংখ্যা বের করা
-    total_files = 0
-    for idx, col in enumerate(file_cols):
-        try:
-            count = await col.estimated_document_count()
-            total_files += count
-        except Exception as e:
-            print(f"⚠️ ডাটাবেজ {idx+1} থেকে ফাইল গণনা করতে ব্যর্থ (ডিবি ডাউন থাকতে পারে): {e}")
-        
-    total_users = 0
-    premium_users = 0
-    total_groups = 0
-    try:
-        # [সংশোধন]: ইউজার এবং গ্রুপ সংখ্যা মেটাডাটার বদলে সরাসরি লাইভ গোনা হবে (১০০% রিয়েল-টাইম)
-        total_users = await users_col.count_documents({})
-        premium_users = await users_col.count_documents({"is_premium": True})
-        total_groups = await groups_col.count_documents({})
-        
-        # ইউজার ডাটাবেজের মেমোরি হিসাব
-        u_stats = await user_db.command("dbstats")
-        total_used_bytes += u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
-    except Exception as e:
-        # total_used_bytes ইনিশিয়েট করা হচ্ছে যদি উপরে ক্যাচ না হয়ে থাকে
-        total_used_bytes = 0
-        
-    # প্রতিটি ফাইল ডাটাবেজের আলাদা হিসাব
+    # প্রতিটি ফাইল ডাটাবেজ থেকে আলাদাভাবে ডাটা সংগ্রহ
     file_dbs_info = []
+    total_files = 0
+    total_used_bytes = 0
+    
     for idx, db in enumerate(file_dbs):
         try:
             col = file_cols[idx]
             count = await col.estimated_document_count()
+            total_files += count
             
             stats = await db.command("dbstats")
             used_bytes = stats.get("storageSize", 0) + stats.get("indexSize", 0)
             total_used_bytes += used_bytes
             used_mb = used_bytes / (1024 * 1024)
             
+            # আপনার ৪০০ এমবি লিমিট অনুযায়ী কত খালি আছে তার হিসাব
             free_mb = config.DB_LIMIT_MB - used_mb
             if free_mb < 0:
                 free_mb = 0.0
@@ -267,6 +251,9 @@ async def get_detailed_stats():
             status_str = "🟢 ACTIVE" if used_mb < config.DB_LIMIT_MB else "🔴 FULL"
             if idx in BLOCKED_DBS:
                 status_str = "🔴 BLOCKED"
+            if idx == 0:
+                # ১ম ফাইল ডাটাবেজের স্ট্যাটাস সবসময় "USER ONLY" বা "SKIPPED FOR FILES" দেখাবে
+                status_str = "👑 USER DEDICATED"
             
             file_dbs_info.append({
                 "db_num": idx + 1,
@@ -283,6 +270,21 @@ async def get_detailed_stats():
                 "free_mb": 0.0,
                 "status": "❌ OFFLINE"
             })
+        
+    total_users = 0
+    premium_users = 0
+    total_groups = 0
+    try:
+        # [সংশোধন]: ইউজার এবং গ্রুপ সংখ্যা মেটাডাটার বদলে সরাসরি লাইভ গোনা হবে (১০০% রিয়েল-টাইম)
+        total_users = await users_col.count_documents({})
+        premium_users = await users_col.count_documents({"is_premium": True})
+        total_groups = await groups_col.count_documents({})
+        
+        # ইউজার ডাটাবেজের মেমোরি হিসাব
+        u_stats = await user_db.command("dbstats")
+        total_used_bytes += u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
+    except Exception as e:
+        total_used_bytes = 0
         
     # সামগ্রিক স্টোরেজ হিসাব (জিবি/এমবি)
     total_used_mb = total_used_bytes / (1024 * 1024)
