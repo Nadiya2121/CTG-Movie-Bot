@@ -25,6 +25,8 @@ GENRE_MAP = {
 
 # --- ফাইল কোয়ালিটি সনাক্ত করার ফাংশন ---
 def detect_quality(name: str) -> str:
+    if not name:
+        return "HD Quality"
     patterns = [
         (r'\b(2160p|4k|uhd)\b', '4K UHD'),
         (r'\b(1080p|fhd)\b', '1080p FHD'),
@@ -35,13 +37,16 @@ def detect_quality(name: str) -> str:
         (r'\b(hdtv)\b', 'HDTV'),
         (r'\b(camrip|cam|hc)\b', 'CAMRip')
     ]
-    for pattern, label in patterns:
-        if re.search(pattern, name, re.IGNORECASE):
-            if label in ['WEB-DL', 'BluRay', 'HDTV', 'CAMRip']:
-                res_match = re.search(r'\b(480p|720p|1080p|2160p)\b', name, re.IGNORECASE)
-                if res_match:
-                    return f"{res_match.group(0)} {label}"
-            return label
+    try:
+        for pattern, label in patterns:
+            if re.search(pattern, name, re.IGNORECASE):
+                if label in ['WEB-DL', 'BluRay', 'HDTV', 'CAMRip']:
+                    res_match = re.search(r'\b(480p|720p|1080p|2160p)\b', name, re.IGNORECASE)
+                    if res_match:
+                        return f"{res_match.group(0)} {label}"
+                return label
+    except Exception as e:
+        print(f"Quality detection error: {e}")
     return "HD Quality"
 
 # --- সুনির্দিষ্ট ক্লিন-আপ ফাংশন ---
@@ -49,21 +54,15 @@ def clean_movie_title(name: str) -> str:
     if not name or not isinstance(name, str):
         return "Movie File"
         
-    # ১. টেলিগ্রাম ইউজারনেম ও লিংক ডিলিট
     name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
     name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
     
-    # ২. ডেমেইন লিংক ডিলিট
     domain_extensions = "com|org|net|xyz|club|co|tv|link|info|me|cc|site|space|click|in|online|icu"
     name = re.sub(r'\b[a-zA-Z0-9-]+\.(' + domain_extensions + r')\b', '', name, flags=re.IGNORECASE)
     
-    # ৩. মুভি ফাইল এক্সটেনশন ডিলিট
     name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
     
-    # ৪. নামের মাঝের সমস্ত ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে প্রতিস্থাপন
     name = name.replace(".", " ").replace("_", " ").replace("-", " ")
-    
-    # অতিরিক্ত ডাবল স্পেস ক্লিন করা
     name = re.sub(r'\s+', ' ', name).strip()
     
     if not name:
@@ -158,31 +157,28 @@ async def auto_channel_post_handler(client: Client, message: Message):
             
     # ৩. ডাটাবেজে না থাকলে নতুন ফাইল হিসেবে সেভ করা হচ্ছে
     if not db_id:
-        db_id = await save_file(file_name, media.file_size, media.file_id, message.chat.id, message.id)
+        try:
+            db_id = await save_file(file_name, media.file_size, media.file_id, message.chat.id, message.id)
+        except Exception as e:
+            print(f"Error saving file: {e}")
         
     if not db_id:
+        print("Skipping auto post: db_id not found or failed to save.")
         return
         
     cleaned_title = clean_movie_title(file_name)
     movie_meta = await fetch_tmdb_metadata(file_name)
     bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
     
-    # ডুপ্লিকেট পোস্ট এড়াতে ও একাধিক কোয়ালিটি মার্জ করতে মঙ্গোডিবিতে ট্র্যাকিং কালেকশন ব্যবহার
-    db = file_cols[0].database
-    posts_col = db["channel_posts"]
-    
+    # ইউনিক কি (Key) নির্ধারণ
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
         tmdb_id = movie_meta.get("id")
         unique_key = f"{media_type}_{tmdb_id}"
     else:
-        # টিএমডিবি ডাটা না থাকলে নাম ভিত্তিক ইউনিক কি তৈরি
         slug = re.sub(r'[^a-z0-9]', '', cleaned_title.lower())
         unique_key = f"raw_{slug}"
         
-    # পূর্বের কোনো পোস্ট এই মুভি/সিরিজের জন্য করা হয়েছে কিনা তা চেক করা হচ্ছে
-    existing_post = await posts_col.find_one({"_id": unique_key})
-    
     current_quality = detect_quality(file_name)
     file_info = {
         "db_id": db_id,
@@ -191,17 +187,32 @@ async def auto_channel_post_handler(client: Client, message: Message):
         "quality": current_quality
     }
     
-    if existing_post:
-        files_list = existing_post.get("files", [])
-        # ডুপ্লিকেট এন্ট্রি এড়াতে চেক
-        if not any(f["db_id"] == db_id for f in files_list):
-            files_list.append(file_info)
-            await posts_col.update_one({"_id": unique_key}, {"$set": {"files": files_list}})
-    else:
+    # ডেটাবেজ মার্জিং লজিক (নিরাপদ ট্রাই-এক্সেপ্ট ব্লক সহ)
+    files_list = [file_info]  # ডিফল্ট ফলব্যাক মান
+    existing_post = None
+    posts_col = None
+    use_aggregation = False
+    
+    try:
+        if file_cols and len(file_cols) > 0:
+            db = file_cols[0].database
+            posts_col = db["channel_posts"]
+            
+            existing_post = await posts_col.find_one({"_id": unique_key})
+            if existing_post:
+                files_list = existing_post.get("files", [])
+                if not any(f["db_id"] == db_id for f in files_list):
+                    files_list.append(file_info)
+                    await posts_col.update_one({"_id": unique_key}, {"$set": {"files": files_list}})
+            else:
+                await posts_col.insert_one({"_id": unique_key, "files": files_list, "msg_id": None})
+            use_aggregation = True
+    except Exception as e:
+        print(f"Database aggregation/lookup error: {e}. Falling back to normal posting.")
         files_list = [file_info]
-        await posts_col.insert_one({"_id": unique_key, "files": files_list, "msg_id": None})
+        use_aggregation = False
         
-    # বাটন ও সাইজের তথ্য ডাইনামিকালি সাজানো
+    # বাটন ও সাইজ টেক্সট সাজানো
     buttons = []
     size_parts = []
     for f in files_list:
@@ -212,7 +223,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         
     size_str = " | ".join(size_parts)
     
-    # ক্যাপশন তৈরি (টিএমডিবি ডাটা থাকলে)
+    # ক্যাপশন ফরম্যাটিং (টিএমডিবি ডাটা থাকলে)
     if movie_meta:
         media_type = movie_meta.get("media_type", "movie")
         if media_type == "tv":
@@ -247,7 +258,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
             f"🍿 Select your preferred quality below to download instantly!"
         )
     else:
-        # সাধারণ টেক্সট ক্যাপশন (টিএমডিবি ডাটা না থাকলে)
+        # ফলব্যাক সাধারণ ক্যাপশন
         poster_path = None
         caption_text = (
             f"🎬 **NEW FILE ADDED!** 🎬\n\n"
@@ -259,7 +270,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         
     # এডিটিং বা নতুন পোস্ট করার প্রক্রিয়া
     sent_msg = None
-    if existing_post and existing_post.get("msg_id"):
+    if use_aggregation and existing_post and existing_post.get("msg_id"):
         msg_id = existing_post["msg_id"]
         try:
             if poster_path:
@@ -276,12 +287,11 @@ async def auto_channel_post_handler(client: Client, message: Message):
                     text=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
-            return
+            return  # এডিট সফল হলে এখানেই ফাংশন শেষ হবে
         except Exception as e:
-            # পোস্ট এডিট করতে ব্যর্থ হলে (যেমন: ডিলিট হয়ে থাকলে) নতুন করে পাঠানো হবে
-            print(f"Failed to edit message {msg_id}: {e}. Sending new message...")
+            print(f"Failed to edit message {msg_id}: {e}. Sending as a new post...")
             
-    # নতুন পোস্ট পাঠানো হচ্ছে
+    # নতুন পোস্ট পাঠানোর প্রক্রিয়া
     if poster_path:
         poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}"
         try:
@@ -304,9 +314,13 @@ async def auto_channel_post_handler(client: Client, message: Message):
         except Exception as e:
             print(f"Failed to send update message: {e}")
             
-    if sent_msg:
-        await posts_col.update_one(
-            {"_id": unique_key},
-            {"$set": {"msg_id": sent_msg.id, "files": files_list}},
-            upsert=True
-        )
+    # ডেটাবেজে মেসেজ আইডি সংরক্ষণ (ভবিষ্যতে এডিটের জন্য)
+    if sent_msg and use_aggregation and posts_col is not None:
+        try:
+            await posts_col.update_one(
+                {"_id": unique_key},
+                {"$set": {"msg_id": sent_msg.id, "files": files_list}},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"Failed to save post reference to DB: {e}")
