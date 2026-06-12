@@ -3,11 +3,24 @@
 import asyncio
 import re
 import urllib.parse
-import aiohttp
+import urllib.request
+import json
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 import config
 from database import save_file, clean_movie_title
+
+# --- পাইথনের স্ট্যান্ডার্ড লাইব্রেরি দিয়ে সিঙ্ক ইউআরআই রিড করার ফাংশন ---
+def fetch_sync_url(url: str):
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            if response.status == 200:
+                return json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        print(f"Sync fetch error: {e}")
+    return None
 
 # --- মুভির নাম থেকে বছর ও পরিচ্ছন্ন নাম আলাদা করার ফাংশন ---
 def parse_name_and_year(raw_name: str):
@@ -38,46 +51,43 @@ async def fetch_tmdb_metadata(raw_file_name: str):
     # Multi Search API ব্যবহার করা হচ্ছে যা মুভি এবং ওয়েব সিরিজ একসাথে সার্চ করতে পারে
     search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=bn-BD"
     
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(search_url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    results = data.get("results", [])
-                    if results:
-                        # বছর অনুযায়ী নিখুঁত ম্যাচিং ফিল্টার করা হচ্ছে
-                        matched_item = None
-                        if release_year:
-                            for item in results:
-                                media_type = item.get("media_type")
-                                # মুভির জন্য release_date এবং সিরিজের জন্য first_air_date চেক করা হচ্ছে
-                                date_key = "release_date" if media_type == "movie" else "first_air_date"
-                                item_date = item.get(date_key, "")
-                                if item_date and item_date.startswith(release_year):
-                                    matched_item = item
-                                    break
-                                    
-                        # যদি বছর দিয়ে কোনো ম্যাচ না পাওয়া যায় বা ফাইলে বছর না থাকে, তবে প্রথম মুভি বা সিরিজটি নেওয়া হবে
-                        if not matched_item:
-                            valid_results = [r for r in results if r.get("media_type") in ["movie", "tv"]]
-                            if valid_results:
-                                matched_item = valid_results[0]
-                                
-                        if matched_item:
-                            media_type = matched_item.get("media_type")
-                            item_id = matched_item.get("id")
+    # পাইথনের ইভেন্ট লুপের ব্যাকগ্রাউন্ড থ্রেড পুলে রিকোয়েস্ট পাঠানো হচ্ছে
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(None, fetch_sync_url, search_url)
+    
+    if data:
+        results = data.get("results", [])
+        if results:
+            # বছর অনুযায়ী নিখুঁত ম্যাচিং ফিল্টার করা হচ্ছে
+            matched_item = None
+            if release_year:
+                for item in results:
+                    media_type = item.get("media_type")
+                    # মুভির জন্য release_date এবং সিরিজের জন্য first_air_date চেক করা হচ্ছে
+                    date_key = "release_date" if media_type == "movie" else "first_air_date"
+                    item_date = item.get(date_key, "")
+                    if item_date and item_date.startswith(release_year):
+                        matched_item = item
+                        break
+                        
+            # যদি বছর দিয়ে কোনো ম্যাচ না পাওয়া যায় বা ফাইলে বছর না থাকে, তবে প্রথম মুভি বা সিরিজটি নেওয়া হবে
+            if not matched_item:
+                valid_results = [r for r in results if r.get("media_type") in ["movie", "tv"]]
+                if valid_results:
+                    matched_item = valid_results[0]
+                    
+            if matched_item:
+                media_type = matched_item.get("media_type")
+                item_id = matched_item.get("id")
+                
+                # যদি বাংলা কাহিনী সংক্ষেপ (Overview) খালি থাকে, তবে ইংলিশ ফলব্যাক নেওয়া হবে
+                if not matched_item.get("overview") or matched_item.get("overview").strip() == "":
+                    eng_url = f"https://api.themoviedb.org/3/{media_type}/{item_id}?api_key={api_key}&language=en-US"
+                    eng_data = await loop.run_in_executor(None, fetch_sync_url, eng_url)
+                    if eng_data:
+                        matched_item["overview"] = eng_data.get("overview")
                             
-                            # যদি বাংলা কাহিনী সংক্ষেপ (Overview) খালি থাকে, তবে ইংলিশ ফলব্যাক নেওয়া হবে
-                            if not matched_item.get("overview") or matched_item.get("overview").strip() == "":
-                                eng_url = f"https://api.themoviedb.org/3/{media_type}/{item_id}?api_key={api_key}&language=en-US"
-                                async with session.get(eng_url) as eng_resp:
-                                    if eng_resp.status == 200:
-                                        eng_data = await eng_resp.json()
-                                        matched_item["overview"] = eng_data.get("overview")
-                                        
-                            return matched_item
-        except Exception as e:
-            print(f"TMDb API Error: {e}")
+                return matched_item
     return None
 
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হওয়া মাত্রই স্বয়ংক্রিয়ভাবে ক্যাচ করার হ্যান্ডলার ---
