@@ -28,7 +28,7 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
             if req_query in file_name.lower():
                 user_id = req["user_id"]
                 
-                # ইনডেক্সিং এর সময় নাম অলরেডি ক্লিন করা থাকে, তবুও ডাবল সেফটির জন্য ক্লিন করা হচ্ছে
+                # নোটিফিকেশনে সুন্দর দেখানোর জন্য নাম ক্লিন করা হচ্ছে
                 cleaned_name = clean_movie_title(file_name)
                 
                 raw_url = config.WEB_URL.strip().replace("https://", "").replace("http://", "").rstrip("/")
@@ -56,30 +56,27 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         print(f"Request notify error: {e}")
 
 
-# মেইন চ্যানেলের অটো-ইনডেক্সিং (১০০% ফাইল ইনডেক্স হবে এবং স্টাইলিশ ফন্ট নরমাল হবে)
+# মেইন চ্যানেলের অটো-ইনডেক্সিং (কোয়ালিটি ট্যাগ সহ ১০০% নিখুঁত ইনডেক্সিং)
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_index(client: Client, message: Message):
     file = message.document or message.video
     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
     
-    # [নরমালাইজেশন]: প্রথমে ফ্যান্সি ফন্ট সাধারণ ফন্টে রূপান্তর করা হচ্ছে (ভাষা পরিবর্তন হবে না)
+    # [নরমালাইজেশন]: ফ্যান্সি ফন্ট সাধারণ ফন্টে রূপান্তর করা হচ্ছে (কোয়ালিটি বা ভাষা অক্ষুণ্ন থাকবে)
     normalized_fname = normalize_text(raw_fname)
     
-    # [অটো-রিনেম]: মঙ্গোডিবিতে সেভ করার আগেই ফাইল নামটি সম্পূর্ণ ক্লিন করে ফেলা হচ্ছে
-    cleaned_fname = clean_movie_title(normalized_fname)
-    
     saved_id = await save_file(
-        file_name=cleaned_fname, # ক্লিন ও নরমালাইজড নাম সেভ হচ্ছে
+        file_name=normalized_fname, # কোয়ালিটি ও ট্যাগসহ সম্পূর্ণ নামটি ডাটাবেজে সেভ হচ্ছে
         file_size=file.file_size,
         file_id=file.file_id,
         chat_id=message.chat.id,
         message_id=message.id
     )
     if saved_id and isinstance(saved_id, str):
-        asyncio.create_task(check_and_notify_requests(client, cleaned_fname, saved_id))
+        asyncio.create_task(check_and_notify_requests(client, normalized_fname, saved_id))
 
 
-# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip, Auto-Rename & Font Normalization)
+# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip, Font Normalization & Original Quality Preservation)
 @Client.on_message(filters.command("index") & is_admin & filters.private)
 async def index_start_cmd(client: Client, message: Message):
     skip_count = 0
@@ -156,14 +153,11 @@ async def process_index_forward(client: Client, message: Message):
                     file = msg.document or msg.video
                     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
                     
-                    # [নরমালাইজেশন]: ফ্যান্সি ফন্ট সাধারণ ফন্টে রূপান্তর (ভাষা নির্বিশেষে সব ফাইল ইনডেক্স হবে)
+                    # [নরমালাইজেশন]: ফ্যান্সি ফন্ট পরিবর্তন কিন্তু আসল কোয়ালিটি/ট্যাগ সংরক্ষণ
                     normalized_fname = normalize_text(raw_fname)
                     
-                    # [অটো-রিনেম]: ব্যাচ ইনসার্ট করার আগেই নাম ক্লিন করা হচ্ছে
-                    cleaned_fname = clean_movie_title(normalized_fname)
-                    
                     batch_files.append({
-                        "file_name": cleaned_fname, # ক্লিন নাম ডাটাবেজে স্টোর হবে
+                        "file_name": normalized_fname, # কোয়ালিটিসহ আসল নামটি ডাটাবেজে স্টোর হবে
                         "file_size": file.file_size,
                         "file_id": file.file_id,
                         "chat_id": chat_id,
