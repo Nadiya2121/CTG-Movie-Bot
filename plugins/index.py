@@ -1,6 +1,7 @@
 # plugins/index.py
 
 import asyncio
+import re  # রেগুলার এক্সপ্রেশন ব্যবহারের জন্য যুক্ত করা হলো
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 import config
@@ -14,6 +15,49 @@ INDEX_STATES = {}
 
 # মাল্টিপল এডমিন ফিল্টার (config.ADMINS তালিকা চেক করবে)
 is_admin = filters.create(lambda _, __, message: message.from_user and message.from_user.id in config.ADMINS)
+
+
+# ==========================================
+#  সহায়ক ফাংশন: ক্যাপশন থেকে ভাষা সনাক্তকরণ লজিক
+# ==========================================
+def detect_language_from_caption(caption: str) -> str:
+    """
+    মেসেজের ক্যাপশন স্ক্রিন করে যেকোনো স্থানে থাকা ভাষা (Language) সনাক্ত করে।
+    এটি ক্যাপশনের অনেক গভীরে বা নিচে থাকলেও খুঁজে বের করতে সক্ষম।
+    """
+    if not caption:
+        return ""
+        
+    caption_lower = caption.lower()
+    
+    # সনাক্তকরণের জন্য বিভিন্ন ভাষার কি-ওয়ার্ড ও প্যাটার্ন
+    lang_patterns = {
+        "Bengali": [r"\bbengali\b", r"\bbangla\b", r"বাংলা"],
+        "Hindi": [r"\bhindi\b", r"हिन्दी", r"हिंदी"],
+        "Tamil": [r"\btamil\b", r"தமிழ்"],
+        "Telugu": [r"\btelugu\b", r"తెలుగు"],
+        "English": [r"\benglish\b", r"\beng\b"],
+        "Dual Audio": [r"\bdual\b", r"দ্বৈত অডিও", r"dual audio", r"dual-audio"],
+        "Multi Audio": [r"\bmulti\b", r"multi audio", r"multi-audio"]
+    }
+    
+    detected = []
+    for lang, patterns in lang_patterns.items():
+        for pattern in patterns:
+            if re.search(pattern, caption_lower):
+                detected.append(lang)
+                break  # এই ভাষার একটি প্যাটার্ন মিললে পরবর্তী ভাষায় চলে যাবে
+                
+    if detected:
+        # যদি "Dual Audio" বা একাধিক ভাষা পাওয়া যায়
+        if "Dual Audio" in detected or len(detected) > 1:
+            if "Dual Audio" in detected:
+                return "Dual Audio"
+            return " + ".join(detected)
+        return detected[0]
+        
+    return ""
+
 
 # রিকোয়েস্টকারী ইউজারকে মুভি আপলোড হওয়া মাত্র নোটিফাই করার অটোমেটিক টাস্ক (সেফটি সহ)
 async def check_and_notify_requests(client: Client, file_name: str, file_db_id: str):
@@ -56,7 +100,7 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         print(f"Request notify error: {e}")
 
 
-# মেইন চ্যানেলের অটো-ইনডেক্সিং (কোয়ালিটি ট্যাগ সহ ১০০% নিখুঁত ইনডেক্সিং)
+# মেইন চ্যানেলের অটো-ইনডেক্সিং (কোয়ালিটি ট্যাগ ও অটো-ল্যাঙ্গুয়েজ ডিটেক্ট সহ)
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_index(client: Client, message: Message):
     file = message.document or message.video
@@ -65,8 +109,20 @@ async def auto_index(client: Client, message: Message):
     # [নরমালাইজেশন]: ফ্যান্সি ফন্ট সাধারণ ফন্টে রূপান্তর করা হচ্ছে (কোয়ালিটি বা ভাষা অক্ষুণ্ন থাকবে)
     normalized_fname = normalize_text(raw_fname)
     
+    # [ক্যাপশন থেকে ভাষা সনাক্তকরণ]
+    caption_text = message.caption if message.caption else ""
+    detected_lang = detect_language_from_caption(caption_text)
+    
+    # যদি ভাষা সনাক্ত হয় এবং তা ফাইলের নামে আগে থেকে না থাকে, তবে যুক্ত করা হবে
+    if detected_lang and detected_lang.lower() not in normalized_fname.lower():
+        name_parts = normalized_fname.rsplit(".", 1)
+        if len(name_parts) == 2:
+            normalized_fname = f"{name_parts[0]} [{detected_lang}].{name_parts[1]}"
+        else:
+            normalized_fname = f"{normalized_fname} [{detected_lang}]"
+    
     saved_id = await save_file(
-        file_name=normalized_fname, # কোয়ালিটি ও ট্যাগসহ সম্পূর্ণ নামটি ডাটাবেজে সেভ হচ্ছে
+        file_name=normalized_fname, # কোয়ালিটি ও ক্যাপশন ল্যাঙ্গুয়েজসহ সম্পূর্ণ নামটি ডাটাবেজে সেভ হচ্ছে
         file_size=file.file_size,
         file_id=file.file_id,
         chat_id=message.chat.id,
@@ -76,7 +132,7 @@ async def auto_index(client: Client, message: Message):
         asyncio.create_task(check_and_notify_requests(client, normalized_fname, saved_id))
 
 
-# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip, Font Normalization & Original Quality Preservation)
+# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip, Font Normalization, Quality Preservation & Auto-Language)
 @Client.on_message(filters.command("index") & is_admin & filters.private)
 async def index_start_cmd(client: Client, message: Message):
     skip_count = 0
@@ -156,8 +212,20 @@ async def process_index_forward(client: Client, message: Message):
                     # [নরমালাইজেশন]: ফ্যান্সি ফন্ট পরিবর্তন কিন্তু আসল কোয়ালিটি/ট্যাগ সংরক্ষণ
                     normalized_fname = normalize_text(raw_fname)
                     
+                    # [ক্যাপশন থেকে ভাষা সনাক্তকরণ]
+                    caption_text = msg.caption if msg.caption else ""
+                    detected_lang = detect_language_from_caption(caption_text)
+                    
+                    # যদি ভাষা সনাক্ত হয় এবং তা ফাইলের নামে আগে থেকে না থাকে, তবে যুক্ত করা হবে
+                    if detected_lang and detected_lang.lower() not in normalized_fname.lower():
+                        name_parts = normalized_fname.rsplit(".", 1)
+                        if len(name_parts) == 2:
+                            normalized_fname = f"{name_parts[0]} [{detected_lang}].{name_parts[1]}"
+                        else:
+                            normalized_fname = f"{normalized_fname} [{detected_lang}]"
+                    
                     batch_files.append({
-                        "file_name": normalized_fname, # কোয়ালিটিসহ আসল নামটি ডাটাবেজে স্টোর হবে
+                        "file_name": normalized_fname, # কোয়ালিটি ও ভাষা সহ আসল নামটি ডাটাবেজে স্টোর হবে
                         "file_size": file.file_size,
                         "file_id": file.file_id,
                         "chat_id": chat_id,
