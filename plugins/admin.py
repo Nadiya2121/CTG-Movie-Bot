@@ -13,7 +13,8 @@ from database import (
     get_all_users,
     add_premium_user,
     remove_premium_user,
-    get_all_premium_users
+    get_all_premium_users,
+    migrate_existing_fancy_fonts  # নতুন মাইগ্রেশন ফাংশনটি ইম্পোর্ট করা হলো
 )
 
 # বটের আপটাইম হিসাব করার জন্য স্টার্ট টাইম রেকর্ড করা হলো
@@ -130,10 +131,33 @@ async def delete_cmd(client: Client, message: Message):
     deleted_count = await delete_files_by_name(query)
     await message.reply_text(f"✅ ডাটাবেজ থেকে **'{query}'** নামের মোট `{deleted_count}` টি ফাইল ডিলিট করা হয়েছে।")
 
+
 @Client.on_message(filters.command("clean_database") & is_admin)
 async def clean_database_cmd(client: Client, message: Message):
     deleted_count = await delete_all_files_from_db()
     await message.reply_text(f"🛑 **ডাটাবেজ সম্পূর্ণ খালি করা হয়েছে!**\nমোট `{deleted_count}` টি ফাইল স্থায়ীভাবে মুছে ফেলা হয়েছে।")
+
+
+# --- নতুন ডাটাবেজ ফন্ট মাইগ্রেশন কমান্ড ---
+@Client.on_message(filters.command("migrate") & is_admin & filters.private)
+async def migrate_db_cmd(client: Client, message: Message):
+    status_msg = await message.reply_text("⏳ ডাটাবেজের পুরোনো ফ্যান্সি ফন্টগুলো সাধারণ ফন্টে রূপান্তর (Normalize) করা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।")
+    start_time = time.time()
+    try:
+        updated_count = await migrate_existing_fancy_fonts()
+        elapsed = get_readable_time(int(time.time() - start_time))
+        await status_msg.edit_text(
+            f"🎉 **মাইগ্রেশন সফলভাবে সম্পন্ন হয়েছে (Turbo Finish)!**\n\n"
+            f"📊 **রিপোর্ট:**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ মোট রূপান্তরিত মুভি: `{updated_count}` টি\n"
+            f"⏱ মোট সময় লেগেছে: `{elapsed}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👉 এখন পূর্বের সমস্ত মুভি সাধারণ ফন্টেই সার্চে পাওয়া যাবে।"
+        )
+    except Exception as e:
+        await status_msg.edit_text(f"❌ মাইগ্রেশন ব্যর্থ হয়েছে! ভুল: `{e}`")
+
 
 # --- প্রগতিশীল ব্রডকাস্টার (Progressive Broadcaster with Live Progress Bar) ---
 @Client.on_message(filters.command("broadcast") & is_admin)
