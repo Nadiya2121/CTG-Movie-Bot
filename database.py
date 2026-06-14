@@ -5,6 +5,7 @@ from bson import ObjectId
 import config
 import re
 import difflib
+import unicodedata  # ফন্ট নরমালাইজেশনের জন্য যুক্ত করা হয়েছে
 
 # ==========================================
 #  ১. ডাটাবেজ কানেকশন এবং আইসোলেশন
@@ -36,6 +37,22 @@ for uri in config.FILE_DATABASE_URIS:
 DB_SIZES_CACHE = {}
 BLOCKED_DBS = set()
 
+
+# ==========================================
+#  সহায়ক ফাংশন: ফন্ট নরমালাইজেশন (Font Normalization)
+# ==========================================
+
+def normalize_text(text: str) -> str:
+    """
+    টেলিগ্রামের ফ্যান্সি বা স্টাইলিশ ফন্টগুলোকে (যেমন: 𝖬𝗈𝗏𝗂𝖾, 𝐌𝐨𝐯𝐢𝐞, 𝕄𝕠𝕧𝕚𝕖)
+    সাধারণ টেক্সটে রূপান্তর করে। এটি বাংলা বা অন্যান্য স্ক্রিপ্টকে প্রভাবিত করে না।
+    """
+    if not text:
+        return ""
+    # NFKC নরমালাইজেশন স্টাইলিশ ইউনিকোড ক্যারেক্টারকে স্ট্যান্ডার্ড ক্যারেক্টারে রূপান্তর করে
+    return unicodedata.normalize('NFKC', text).strip()
+
+
 # ==========================================
 #  ২. ডায়নামিক অটো-সুইচিং লজিক (রিয়েল-টাইম কাউন্টার)
 # ==========================================
@@ -48,7 +65,7 @@ async def get_active_files_collection():
     if not file_cols or len(file_cols) < 2:
         return None if not file_cols else file_cols[0]
 
-    # [সংশোধন]: ১ম ফাইল ডাটাবেজ (Index 0) সম্পূর্ণ স্কিপ করা হচ্ছে এবং ২য় ডাটাবেজ (Index 1) থেকে শুরু করা হচ্ছে
+    # ১ম ফাইল ডাটাবেজ (Index 0) সম্পূর্ণ স্কিপ করা হচ্ছে এবং ২য় ডাটাবেজ (Index 1) থেকে শুরু করা হচ্ছে
     for idx in range(1, len(file_dbs)):
         if idx in BLOCKED_DBS:
             continue
@@ -110,7 +127,10 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
     if active_col is None:
         return False
     
-    file_name = file_name if file_name else f"Video_File_{file_size}"
+    raw_name = file_name if file_name else f"Video_File_{file_size}"
+    
+    # [নতুন পরিবর্তন]: ফাইলের নাম সেভ করার পূর্বে ফন্ট নরমালাইজ করে নেওয়া হচ্ছে
+    file_name = normalize_text(raw_name)
     
     # ডুপ্লিকেট প্রতিরোধের জন্য সব ফাইল ডাটাবেজে ফাইলটি ইতিমধ্যে আছে কিনা চেক করা হচ্ছে (DB1 সহ সার্চ হবে)
     duplicate = False
@@ -173,7 +193,9 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
 # ==========================================
 
 async def search_db(query):
-    clean_q = query.lower().replace(".", " ").replace("_", " ").replace("-", " ")
+    # [নতুন পরিবর্তন]: ইউজার যদি কোনো ফ্যান্সি ফন্টে সার্চ করে, তবে সেটিকেও প্রথমে নরমালাইজ করা হচ্ছে
+    normalized_query = normalize_text(query)
+    clean_q = normalized_query.lower().replace(".", " ").replace("_", " ").replace("-", " ")
     words = clean_q.strip().split()
     if not words:
         return []
@@ -199,7 +221,7 @@ async def search_db(query):
     # রিয়েল-টাইম সর্টিং (ইউজারের খোঁজা নামের সাথে সবচেয়ে মিল থাকা ফাইলটি আগে দেখাবে)
     def get_sort_key(doc):
         name = doc.get("file_name", "Movie File").lower()
-        q = query.lower()
+        q = normalized_query.lower() # সর্টিং মেকানিজমেও নরমালাইজড কোয়েরি ব্যবহার করা হচ্ছে
         if q == name:
             return 0
         if name.startswith(q):
@@ -294,7 +316,6 @@ async def get_detailed_stats():
     premium_users = 0
     total_groups = 0
     try:
-        # [সংশোধন]: ইউজার এবং গ্রুপ সংখ্যা মেটাডাটার বদলে সরাসরি লাইভ গোনা হবে (১০০% রিয়েল-টাইম)
         total_users = await users_col.count_documents({})
         premium_users = await users_col.count_documents({"is_premium": True})
         total_groups = await groups_col.count_documents({})
@@ -304,7 +325,7 @@ async def get_detailed_stats():
         used_bytes_user = u_stats.get("storageSize", 0) + u_stats.get("indexSize", 0)
         total_used_bytes += used_bytes_user
         
-        # [নতুন প্রফেশনাল ড্যাশবোর্ড লজিক]: যদি ইউজার ডাটাবেজটি সম্পূর্ণ আলাদা ক্লাস্টার বা ফাইল তালিকার বাইরে থাকে (যেমন ৪র্থ ডাটাবেজ)
+        # [নতুন ড্যাশবোর্ড লজিক]: যদি ইউজার ডাটাবেজটি সম্পূর্ণ আলাদা ক্লাস্টার বা ফাইল তালিকার বাইরে থাকে
         if user_db_idx == -1:
             used_mb_user = used_bytes_user / (1024 * 1024)
             free_mb_user = 512.0 - used_mb_user
@@ -358,9 +379,10 @@ async def get_stats():
 
 async def delete_files_by_name(query):
     deleted = 0
-    # সব ফাইল ডাটাবেজ থেকে নির্দিষ্ট মুভি ডিলিট করা হচ্ছে
+    # ডিলিট করার ক্ষেত্রেও ইনপুট কুয়েরি নরমালাইজ করে সার্চ করা হচ্ছে
+    normalized_query = normalize_text(query)
     for col in file_cols:
-        count = await col.delete_many({"file_name": {"$regex": query, "$options": "i"}})
+        count = await col.delete_many({"file_name": {"$regex": normalized_query, "$options": "i"}})
         deleted += count.deleted_count
         
     # ডিলিশনের পর ক্যাশ এবং ব্লক তালিকা রিসেট করার তাগিদ
@@ -388,11 +410,12 @@ async def get_all_users():
     return users
 
 async def save_movie_request(user_id, query):
-    exists = await requests_col.find_one({"user_id": user_id, "query": query, "status": "pending"})
+    normalized_query = normalize_text(query)
+    exists = await requests_col.find_one({"user_id": user_id, "query": normalized_query, "status": "pending"})
     if not exists:
         await requests_col.insert_one({
             "user_id": user_id,
-            "query": query,
+            "query": normalized_query,
             "status": "pending"
         })
         return True
