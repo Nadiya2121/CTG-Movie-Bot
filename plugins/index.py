@@ -4,7 +4,8 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 import config
-from database import save_file, get_active_files_collection, requests_col
+# database থেকে save_file, normalize_text এবং অন্যান্য প্রয়োজনীয় অবজেক্ট ইম্পোর্ট করা হলো
+from database import save_file, get_active_files_collection, requests_col, normalize_text
 # circular import এড়াতে এবং কোড ক্লিন রাখতে search প্লাগইন থেকে clean_movie_title ইম্পোর্ট করা হলো
 from plugins.search import clean_movie_title
 
@@ -55,17 +56,20 @@ async def check_and_notify_requests(client: Client, file_name: str, file_db_id: 
         print(f"Request notify error: {e}")
 
 
-# মেইন চ্যানেলের অটো-ইনডেক্সিং (অটো-রিনেম ফিচার সহ)
+# মেইন চ্যানেলের অটো-ইনডেক্সিং (১০০% ফাইল ইনডেক্স হবে এবং স্টাইলিশ ফন্ট নরমাল হবে)
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_index(client: Client, message: Message):
     file = message.document or message.video
     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
     
+    # [নরমালাইজেশন]: প্রথমে ফ্যান্সি ফন্ট সাধারণ ফন্টে রূপান্তর করা হচ্ছে (ভাষা পরিবর্তন হবে না)
+    normalized_fname = normalize_text(raw_fname)
+    
     # [অটো-রিনেম]: মঙ্গোডিবিতে সেভ করার আগেই ফাইল নামটি সম্পূর্ণ ক্লিন করে ফেলা হচ্ছে
-    cleaned_fname = clean_movie_title(raw_fname)
+    cleaned_fname = clean_movie_title(normalized_fname)
     
     saved_id = await save_file(
-        file_name=cleaned_fname, # ক্লিন নাম সেভ হচ্ছে
+        file_name=cleaned_fname, # ক্লিন ও নরমালাইজড নাম সেভ হচ্ছে
         file_size=file.file_size,
         file_id=file.file_id,
         chat_id=message.chat.id,
@@ -75,7 +79,7 @@ async def auto_index(client: Client, message: Message):
         asyncio.create_task(check_and_notify_requests(client, cleaned_fname, saved_id))
 
 
-# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip & Auto-Rename Support)
+# ম্যানুয়াল ইনডেক্সিং (Turbo Speed Batch with Dynamic Skip, Auto-Rename & Font Normalization)
 @Client.on_message(filters.command("index") & is_admin & filters.private)
 async def index_start_cmd(client: Client, message: Message):
     skip_count = 0
@@ -152,8 +156,11 @@ async def process_index_forward(client: Client, message: Message):
                     file = msg.document or msg.video
                     raw_fname = file.file_name if file.file_name else f"Video_File_{file.file_size}"
                     
+                    # [নরমালাইজেশন]: ফ্যান্সি ফন্ট সাধারণ ফন্টে রূপান্তর (ভাষা নির্বিশেষে সব ফাইল ইনডেক্স হবে)
+                    normalized_fname = normalize_text(raw_fname)
+                    
                     # [অটো-রিনেম]: ব্যাচ ইনসার্ট করার আগেই নাম ক্লিন করা হচ্ছে
-                    cleaned_fname = clean_movie_title(raw_fname)
+                    cleaned_fname = clean_movie_title(normalized_fname)
                     
                     batch_files.append({
                         "file_name": cleaned_fname, # ক্লিন নাম ডাটাবেজে স্টোর হবে
@@ -202,7 +209,7 @@ async def process_index_forward(client: Client, message: Message):
                     f"🔎 স্ক্যান করা মেসেজ: `{scanned_count}`/`{last_msg_id}` টি\n"
                     f"📥 নতুন সংরক্ষিত মুভি: `{saved_count}` টি\n"
                     f"♻️ ডুপ্লিকেট ফাইল স্কিপড: `{skipped_count}` টি\n\n"
-                    f"⚙️ *বট বিরতিহীনভাবে রকেটের গতিতে কাজ করছে।*"
+                    f"⚙️ *বট বিরতিহীনভাবে কাজ করছে।*"
                 )
                 last_edit_scanned_count = scanned_count
                 await asyncio.sleep(1.2)
