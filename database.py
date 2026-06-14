@@ -2,6 +2,7 @@
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from pymongo import UpdateOne  # বাল্ক আপডেটের জন্য যুক্ত করা হয়েছে
 import config
 import re
 import difflib
@@ -447,3 +448,56 @@ async def is_premium_user(user_id: int) -> bool:
     if user:
         return user.get("is_premium", False)
     return False
+
+
+# ==========================================
+#  ৮. ডাটাবেজ মাইগ্রেশন লজিক (One-time Migration with Bulk Write)
+# ==========================================
+
+async def migrate_existing_fancy_fonts():
+    """
+    MongoDB Bulk Write ব্যবহার করে ১৭-১৮ লাখ ফাইল অত্যন্ত দ্রুত
+    এবং ডাটাবেজ ওভারলোড না করে সাধারণ ফন্টে রূপান্তর করবে।
+    """
+    total_updated = 0
+    batch_size = 2000  # প্রতি ব্যাচে ২০০০টি করে ফাইল প্রসেস হবে
+    
+    for idx, col in enumerate(file_cols):
+        print(f"🔄 ফাইল ডাটাবেজ {idx+1} স্ক্রিনিং শুরু হচ্ছে...")
+        
+        # মেমোরি বাঁচাতে শুধু _id এবং file_name ফিল্ড রিড করা হচ্ছে
+        cursor = col.find({}, {"file_name": 1})
+        batch = []
+        
+        async for doc in cursor:
+            doc_id = doc["_id"]
+            old_name = doc.get("file_name", "")
+            
+            if not old_name:
+                continue
+                
+            new_name = normalize_text(old_name)
+            
+            # নাম পরিবর্তন হলে সেটি আপডেটের জন্য ব্যাচে যোগ করা হবে
+            if old_name != new_name:
+                batch.append(UpdateOne({"_id": doc_id}, {"$set": {"file_name": new_name}}))
+            
+            # ব্যাচ পূর্ণ হলে একসাথে ডাটাবেজে রাইট করা হবে
+            if len(batch) >= batch_size:
+                try:
+                    res = await col.bulk_write(batch, ordered=False)
+                    total_updated += res.modified_count
+                except Exception as e:
+                    print(f"⚠️ বাল্ক রাইট এরর (ডাটাবেজ {idx+1}): {e}")
+                batch = []  # ব্যাচ খালি করা হলো
+        
+        # অবশিষ্ট ফাইলগুলো আপডেট করা হচ্ছে
+        if batch:
+            try:
+                res = await col.bulk_write(batch, ordered=False)
+                total_updated += res.modified_count
+            except Exception as e:
+                print(f"⚠️ অবশিষ্ট বাল্ক রাইট এরর (ডাটাবেজ {idx+1}): {e}")
+                
+    print(f"✅ মাইগ্রেশন সম্পন্ন! মোট {total_updated} টি ফাইল সাধারণ ফন্টে কনভার্ট করা হয়েছে।")
+    return total_updated
