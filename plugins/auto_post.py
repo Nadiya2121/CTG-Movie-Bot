@@ -12,8 +12,8 @@ import config
 # database.py থেকে প্রয়োজনীয় কালেকশন এবং ইউজার ডাটাবেজ সরাসরি ইম্পোর্ট করা হলো
 from database import file_cols, user_db, save_file
 
-# --- গ্লোবাল লকিং ডিকশনারি (ডাবল পোস্ট হওয়া সম্পূর্ণ বন্ধ করার জন্য) ---
-post_locks = {}
+# --- লুপ-স্বাধীন গ্লোবাল স্পিনলক সেট (ডাবল পোস্ট সম্পূর্ণ বন্ধ করার জন্য) ---
+processing_keys = set()
 
 # --- ডিফল্ট পোস্টার লিংক (ছবি না পাওয়া গেলে এটি পোস্টার হিসেবে কাজ করবে) ---
 DEFAULT_POSTER = "https://graph.org/file/f3ecbcbc63345d3eb97c2.jpg"
@@ -72,7 +72,7 @@ def detect_quality(name: str) -> str:
         print(f"Quality detection error: {e}")
     return "HD Quality"
 
-# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন (সিনট্যাক্স এরর ফিক্সড) ---
+# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন ---
 def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
     filename_lower = filename.lower()
     detected_langs = []
@@ -325,10 +325,13 @@ async def auto_channel_post_handler(client: Client, message: Message):
         "episode": episode
     }
     
-    # --- [Race Condition Safe Multi-Task Locking] ---
-    lock = post_locks.setdefault(unique_key, asyncio.Lock())
+    # --- [Spinlock to prevent concurrent double posts - 100% Loop Safe] ---
+    while unique_key in processing_keys:
+        await asyncio.sleep(0.5)
+        
+    processing_keys.add(unique_key)
     
-    async with lock:
+    try:
         posts_col = user_db["channel_posts"]
         files_list = []
         existing_post = None
@@ -492,3 +495,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
                 )
             except Exception as e:
                 print(f"Failed to update post reference in DB: {e}")
+    finally:
+        # প্রসেস শেষ হলে লকটি রিলিজ করা হচ্ছে
+        processing_keys.discard(unique_key)
