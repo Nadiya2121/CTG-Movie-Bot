@@ -14,6 +14,16 @@ import config
 
 FILES_PER_PAGE = 5
 
+# গ্রুপ ল্যাঙ্গুয়েজের সংক্ষিপ্ত ম্যাপ (৬৪-বাইট কলব্যাক লিমিট সুরক্ষার জন্য)
+GLANG_MAP = {
+    "all": "all",
+    "bn": "bangla",
+    "hi": "hindi",
+    "en": "english",
+    "ta": "tamil",
+    "te": "telugu"
+}
+
 # --- ৬৪-বাইট কলব্যাক লিমিট সুরক্ষার জন্য বাইট-ভিত্তিক ট্রাঙ্কেট ফাংশন ---
 def safe_bytes_truncate(text: str, max_bytes: int) -> str:
     encoded = text.encode('utf-8')
@@ -66,9 +76,9 @@ async def auto_delete_search_messages(user_msg: Message, bot_msg: Message):
     except:
         pass
 
-# --- গ্রুপে বটের রিপ্লাই ১ মিনিট পর ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
+# --- গ্রুপে বটের রিপ্লাই ৫ মিনিট পর ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
 async def auto_delete_group_reply(message: Message):
-    await asyncio.sleep(60) # ৬০ সেকেন্ড = ১ মিনিট
+    await asyncio.sleep(300) # ৩০০ সেকেন্ড = ৫ মিনিট
     try:
         await message.delete()
     except:
@@ -208,7 +218,6 @@ async def main_handler(client: Client, message: Message):
     # --- ক. পার্সোনাল চ্যাট হ্যান্ডলার (Private PM) ---
     # ==========================================
     if message.chat.type == ChatType.PRIVATE:
-        # [রিয়েল-টাইম ইউজার সেভ ফিক্স]: যেকোনো উপায়ে ইউজার বটে ঢুকলে বা মেসেজ দিলে সবার আগে ডাটাবেজে সেভ করা হবে
         if message.from_user:
             try:
                 await add_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
@@ -243,7 +252,7 @@ async def main_handler(client: Client, message: Message):
                                 f"└─ 💬 [Movie Request Group]({config.GROUP_LINK})\n\n"
                                 f"👨‍💻 *Power and Branded by CTG Network Team*\n\n"
                                 f"⚠️ **⚠️ ꜱᴇᴄᴜʀɪᴛʏ ᴀʟᴇʀᴛ:**\n"
-                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর চ্যাট থেকে স্বയংক্রিয়ভাবে মুছে যাবে। তাই দ্রুত ফাইলটি আপনার **Saved Messages**-এ ফরোয়ার্ড করে রাখুন।"
+                                f"কপিরাইট এড়াতে এই ফাইলটি আগামী **৫ মিনিট** পর চ্যাট থেকে স্বয়ংক্রিয়ভাবে মুছে যাবে। তাই দ্রুত ফাইলটি আপনার **Saved Messages**-এ ফরোয়ার্ড করে রাখুন।"
                             )
                             
                             bot_username = getattr(config, "BOT_USERNAME", "CTGMovieBot")
@@ -412,7 +421,7 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_search_messages(message, results_msg))
             return
 
-        # ১.৪ quarto ধাপ: কোনোভাবেই ফাইল না পাওয়া গেলে (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
+        # ১.৪ চতুর্থ ধাপ: কোনোভাবেই ফাইল না পাওয়া গেলে
         safe_query = safe_bytes_truncate(query, 55)
         req_buttons = [
             [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{safe_query}")]
@@ -432,7 +441,6 @@ async def main_handler(client: Client, message: Message):
         if text.startswith("/"):
             return
             
-        # গ্রুপে মুভি সার্চ করলেই গ্রুপ আইডি ও নাম ডাটাবেজে অটো সেভ হবে
         await add_group(message.chat.id, message.chat.title)
             
         query = text
@@ -448,20 +456,18 @@ async def main_handler(client: Client, message: Message):
         
         # গ্রুপ চ্যাটেও প্রথমে হুবহু অ্যান্ড সার্চ
         if results:
-            group_reply = await send_group_results(message, results, query, page=0, searcher_id=user_id)
+            group_reply = await send_group_results(message, results, query, page=0, lang="all", searcher_id=user_id)
             asyncio.create_task(auto_delete_group_reply(group_reply))
             return
             
-        # গ্রুপ চ্যাটের বানান এআই সংশোধন লজিক (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
+        # গ্রুপ চ্যাটের বানান এআই সংশোধন লজিক
         closest_match = await get_close_match_from_db(query)
         if closest_match:
-            # "gtsearch|" = 9 bytes. user_id = ~10 bytes. Available = 45 bytes. limit closest to 35 bytes.
-            safe_closest = safe_bytes_truncate(closest_match, 35)
+            safe_closest = safe_bytes_truncate(closest_match, 25)
             suggestion_buttons = [
                 [InlineKeyboardButton(f"🎬 Search '{closest_match}'", callback_data=f"gtsearch|{safe_closest}|{user_id}")]
             ]
             
-            # [রিয়েল-টাইম ইউজার সেফটি নোটিশ]: বেনামী বা অ্যানোনিমাস মেসেজের ক্ষেত্রে NoneType এরর হ্যান্ডলিং ফিক্স
             user_mention = message.from_user.mention if message.from_user else "ইউজার"
             
             suggestion_msg = await message.reply_text(
@@ -475,17 +481,16 @@ async def main_handler(client: Client, message: Message):
         # গ্রুপ চ্যাটের প্রোগ্রেসিভ সার্চ লজিক
         results, matched_query = await advanced_search_db(query)
         if results:
-            group_reply = await send_group_results(message, results, matched_query, page=0, searcher_id=user_id)
+            group_reply = await send_group_results(message, results, matched_query, page=0, lang="all", searcher_id=user_id)
             asyncio.create_task(auto_delete_group_reply(group_reply))
             return
             
-        # গ্রুপ চ্যাটের মুভি রিকোয়েস্ট বাটন (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
+        # গ্রুপ চ্যাটের মুভি রিকোয়েস্ট বাটন
         safe_query = safe_bytes_truncate(query, 55)
         req_buttons = [
             [InlineKeyboardButton("📢 Request Admin", callback_data=f"req|{safe_query}")]
         ]
         
-        # [রিয়েল-টাইম ইউজার সেফটি নোটিশ]:  বেনামী বা অ্যানোনিমাস মেসেজের ক্ষেত্রে NoneType এরর হ্যান্ডলিং ফিক্স
         user_mention = message.from_user.mention if message.from_user else "ইউজার"
         
         not_found_msg = await message.reply_text(
@@ -496,12 +501,12 @@ async def main_handler(client: Client, message: Message):
         asyncio.create_task(auto_delete_group_reply(not_found_msg))
 
 
-# সার্চ রেজাল্ট পেজ আকারে সাজানো এবং ল্যাঙ্গুয়েজ ফিল্টারিং বাটন (PM চ্যাটের জন্য - ৬৪-বাইট সেফটি ফিক্স)
+# সার্চ রেজাল্ট পেজ আকারে সাজানো এবং ল্যাঙ্গুয়েজ ফিল্টারিং বাটন (PM চ্যাটের জন্য)
 async def send_search_results(message_or_query, results, query, page=0, lang="all"):
     lang = lang.lower()
     filtered_results = []
     
-    # ফাইলের নাম এবং ক্যাপশন উভয় চেক করার জন্য উন্নত লুপ (ল্যাঙ্গুয়েজ ডিটেকশন ফিক্স)
+    # ল্যাঙ্গুয়েজ ফিল্টারিং প্রসেস
     for f in results:
         file_name = f.get("file_name", "").lower()
         caption = f.get("caption", "").lower() if f.get("caption") else ""
@@ -526,9 +531,7 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
             filtered_results.append(f)
 
     total_results = len(filtered_results)
-    
-    # ৬৪-বাইট লিমিট সুরক্ষায় কুয়েরি বাইট-ভিত্তিক ট্রাঙ্কেট ফিক্স
-    safe_query = safe_bytes_truncate(query, 35)
+    safe_query = safe_bytes_truncate(query, 25)
     
     if total_results == 0:
         text_no_file = f"❌ দুঃখিত, আপনার নির্বাচিত ফিল্টারে কোনো ফাইল পাওয়া যায়নি।"
@@ -556,6 +559,7 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
     
     user_id = message_or_query.from_user.id if isinstance(message_or_query, Message) else message_or_query.from_user.id
 
+    # বাটন জেনারেট (পিএম প্রিমিয়াম লেআউট)
     buttons = []
     for file in current_page_results:
         raw_fname = file.get("file_name", "Movie File")
@@ -566,32 +570,32 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
         
         web_app_url = f"https://{raw_url}/download?id={db_id}&user_id={user_id}"
         buttons.append([InlineKeyboardButton(
-            text=f"🎬 {file_name} [{file_size} MB]",
+            text=f"✨ {file_name} [{file_size} MB]",
             web_app=WebAppInfo(url=web_app_url)
         )])
 
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(InlineKeyboardButton("◀️ আগের", callback_data=f"page|{page - 1}|{safe_query}|{lang}"))
+        nav_buttons.append(InlineKeyboardButton("◀️ Previous", callback_data=f"page|{page - 1}|{safe_query}|{lang}"))
     
     total_pages = (total_results + FILES_PER_PAGE - 1) // FILES_PER_PAGE
-    nav_buttons.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="pages_info"))
+    nav_buttons.append(InlineKeyboardButton(f"✨ Page {page + 1}/{total_pages} ✨", callback_data="pages_info"))
     
     if end_index < total_results:
-        nav_buttons.append(InlineKeyboardButton("পরের ▶️", callback_data=f"page|{page + 1}|{safe_query}|{lang}"))
+        nav_buttons.append(InlineKeyboardButton("Next ▶️", callback_data=f"page|{page + 1}|{safe_query}|{lang}"))
         
     if nav_buttons:
         buttons.append(nav_buttons)
 
     lang_row1 = [
-        InlineKeyboardButton("🇧🇩 বাংলা/Bengali", callback_data=f"lang|0|bangla|{safe_query}"),
+        InlineKeyboardButton("🇧🇩 Bangla", callback_data=f"lang|0|bangla|{safe_query}"),
         InlineKeyboardButton("🇮🇳 Hindi", callback_data=f"lang|0|hindi|{safe_query}"),
         InlineKeyboardButton("🇺🇸 English", callback_data=f"lang|0|english|{safe_query}")
     ]
     lang_row2 = [
-        InlineKeyboardButton("🇮🇳 Tamil", callback_data=f"lang|0|tamil|{safe_query}"),
-        InlineKeyboardButton("🇮🇳 Telugu", callback_data=f"lang|0|telugu|{safe_query}"),
-        InlineKeyboardButton("🔙 Reset", callback_data=f"lang|0|all|{safe_query}")
+        InlineKeyboardButton("🔥 Tamil", callback_data=f"lang|0|tamil|{safe_query}"),
+        InlineKeyboardButton("⚡️ Telugu", callback_data=f"lang|0|telugu|{safe_query}"),
+        InlineKeyboardButton("🔙 Reset Filter", callback_data=f"lang|0|all|{safe_query}")
     ]
     buttons.append(lang_row1)
     buttons.append(lang_row2)
@@ -608,12 +612,52 @@ async def send_search_results(message_or_query, results, query, page=0, lang="al
         pass
 
 
-# --- গ্রুপের ভেতরেই পেজিনেশন বাটন জেনারেট করার ফাংশন (৬৪-বাইট সেফটি ফিক্স) ---
-async def send_group_results(message_or_query, results, query, page=0, searcher_id=0):
-    total_results = len(results)
+# --- গ্রুপের ভেতরেই পেজিনেশন এবং ল্যাঙ্গুয়েজ ফিল্টার বাটন জেনারেট করার উন্নত ফাংশন ---
+async def send_group_results(message_or_query, results, query, page=0, lang="all", searcher_id=0):
+    lang = lang.lower()
+    filtered_results = []
+    
+    for f in results:
+        file_name = f.get("file_name", "").lower()
+        caption = f.get("caption", "").lower() if f.get("caption") else ""
+        searchable_text = f"{file_name} {caption}"
+        
+        if lang == "bangla":
+            if any(k in searchable_text for k in ["bangla", "bengali", "ben", "bng", "বাংলা", "বেঙ্গলি"]):
+                filtered_results.append(f)
+        elif lang == "hindi":
+            if any(k in searchable_text for k in ["hindi", "hin", "dual", "multi"]):
+                filtered_results.append(f)
+        elif lang == "english":
+            if any(k in searchable_text for k in ["english", "eng", "dual", "multi"]):
+                filtered_results.append(f)
+        elif lang == "tamil":
+            if any(k in searchable_text for k in ["tamil", "tam"]):
+                filtered_results.append(f)
+        elif lang == "telugu":
+            if any(k in searchable_text for k in ["telugu", "tel"]):
+                filtered_results.append(f)
+        else:
+            filtered_results.append(f)
+
+    total_results = len(filtered_results)
+    safe_query = safe_bytes_truncate(query, 24)  # কলব্যাক লিমিটের জন্য ছোট ট্রাঙ্কেশন
+
+    if total_results == 0:
+        text_no_file = f"❌ দুঃখিত, নির্বাচিত ফিল্টারে গ্রুপে কোনো ফাইল পাওয়া যায়নি।"
+        back_btn = [[InlineKeyboardButton("🔙 Reset Filter", callback_data=f"gl|0|all|{safe_query}|{searcher_id}")]]
+        try:
+            if isinstance(message_or_query, Message):
+                return await message_or_query.reply_text(text_no_file, reply_markup=InlineKeyboardMarkup(back_btn))
+            else:
+                return await message_or_query.message.edit_text(text_no_file, reply_markup=InlineKeyboardMarkup(back_btn))
+        except MessageNotModified:
+            pass
+        return
+
     start_index = page * FILES_PER_PAGE
     end_index = start_index + FILES_PER_PAGE
-    current_page_results = results[start_index:end_index]
+    current_page_results = filtered_results[start_index:end_index]
     
     buttons = []
     for file in current_page_results:
@@ -623,32 +667,45 @@ async def send_group_results(message_or_query, results, query, page=0, searcher_
         file_size = round(file["file_size"] / (1024 * 1024), 2)
         db_id = str(file["_id"])
         
+        # আকর্ষণীয় বাটন ডিজাইন
         buttons.append([InlineKeyboardButton(
             text=f"🎬 {file_name} [{file_size} MB]",
             callback_data=f"gfile|{db_id}|{searcher_id}"
         )])
 
-    # ৬৪-বাইট লিমিট সুরক্ষায় কুয়েরি বাইট-ভিত্তিক ট্রাঙ্কেট ফিক্স
-    safe_query = safe_bytes_truncate(query, 35)
-
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(InlineKeyboardButton("◀️ আগের", callback_data=f"gpage|{page - 1}|{safe_query}|{searcher_id}"))
+        nav_buttons.append(InlineKeyboardButton("◀️ Previous", callback_data=f"gpage|{page - 1}|{safe_query}|{searcher_id}|{lang}"))
     
     total_pages = (total_results + FILES_PER_PAGE - 1) // FILES_PER_PAGE
-    nav_buttons.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="pages_info"))
+    nav_buttons.append(InlineKeyboardButton(f"⚡️ Page {page + 1}/{total_pages} ⚡️", callback_data="pages_info"))
     
     if end_index < total_results:
-        nav_buttons.append(InlineKeyboardButton("পরের ▶️", callback_data=f"gpage|{page + 1}|{safe_query}|{searcher_id}"))
+        nav_buttons.append(InlineKeyboardButton("Next ▶️", callback_data=f"gpage|{page + 1}|{safe_query}|{searcher_id}|{lang}"))
         
     if nav_buttons:
         buttons.append(nav_buttons)
 
+    # গ্রুপ চ্যাটের জন্য আকর্ষণীয় ল্যাঙ্গুয়েজ রো-বাটন সেটআপ (ইউনিক gl কলব্যাক)
+    lang_row1 = [
+        InlineKeyboardButton("🇧🇩 Bangla", callback_data=f"gl|0|bn|{safe_query}|{searcher_id}"),
+        InlineKeyboardButton("🇮🇳 Hindi", callback_data=f"gl|0|hi|{safe_query}|{searcher_id}"),
+        InlineKeyboardButton("🇺🇸 English", callback_data=f"gl|0|en|{safe_query}|{searcher_id}")
+    ]
+    lang_row2 = [
+        InlineKeyboardButton("🔥 Tamil", callback_data=f"gl|0|ta|{safe_query}|{searcher_id}"),
+        InlineKeyboardButton("⚡️ Telugu", callback_data=f"gl|0|te|{safe_query}|{searcher_id}"),
+        InlineKeyboardButton("🔙 Reset Filter", callback_data=f"gl|0|all|{safe_query}|{searcher_id}")
+    ]
+    buttons.append(lang_row1)
+    buttons.append(lang_row2)
+
     reply_markup = InlineKeyboardMarkup(buttons)
     text_reply = (
         f"🍿 **SearchResult for: '{query}'**\n"
+        f"🌐 **Selected Filter:** `{lang.upper()}`\n\n"
         f"👇 মুভি ফাইলটি সরাসরি আপনার ইনবক্সে পেতে নিচের বাটনে ক্লিক করুন:\n\n"
-        f"⚠️ *এই মেসেজটি ১ মিনিট পর ডিলিট হয়ে যাবে।*"
+        f"⚠️ *এই মেসেজটি ৫ মিনিট পর ডিলিট হয়ে যাবে।*"
     )
     
     try:
@@ -664,7 +721,7 @@ async def send_group_results(message_or_query, results, query, page=0, searcher_
 # --- গ. কলব্যাক কুয়েরি হ্যান্ডলার (Callback Handler) ---
 # ==========================================
 
-# ১. পেজ নেভিগেশন বাটন ক্লিক
+# ১. পেজ নেভিগেশন বাটন ক্লিক (PM)
 @Client.on_callback_query(filters.regex(r"^page\|"))
 async def page_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
@@ -677,7 +734,7 @@ async def page_click_handler(client: Client, callback_query):
         await send_search_results(callback_query, results, matched_query, page=target_page, lang=lang)
     await callback_query.answer()
 
-# ২. ল্যাঙ্গুয়েজ ফিল্টার বাটন ক্লিক
+# ২. ল্যাঙ্গুয়েজ ফিল্টার বাটন ক্লিক (PM)
 @Client.on_callback_query(filters.regex(r"^lang\|"))
 async def lang_click_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
@@ -688,6 +745,29 @@ async def lang_click_handler(client: Client, callback_query):
     results, matched_query = await advanced_search_db(query)
     if results:
         await send_search_results(callback_query, results, matched_query, page=target_page, lang=lang)
+    await callback_query.answer()
+
+# ২.১ ল্যাঙ্গুয়েজ ফিল্টার বাটন ক্লিক (Group)
+@Client.on_callback_query(filters.regex(r"^gl\|"))
+async def group_lang_click_handler(client: Client, callback_query):
+    data = callback_query.data.split("|")
+    target_page = int(data[1])
+    lang_short = data[2]
+    query = data[3]
+    searcher_id = int(data[4])
+    clicker_id = callback_query.from_user.id
+    
+    if clicker_id != searcher_id:
+        await callback_query.answer(
+            "⚠️ দুঃখিত! এই ফিল্টার পরিবর্তন করার ক্ষমতা শুধু সার্চকারীর রয়েছে।", 
+            show_alert=True
+        )
+        return
+        
+    lang_full = GLANG_MAP.get(lang_short, "all")
+    results, matched_query = await advanced_search_db(query)
+    if results:
+        await send_group_results(callback_query, results, matched_query, page=target_page, lang=lang_full, searcher_id=searcher_id)
     await callback_query.answer()
 
 @Client.on_callback_query(filters.regex(r"^pages_info$"))
@@ -778,7 +858,7 @@ async def start_back_handler(client: Client, callback_query):
         pass
     await callback_query.answer()
 
-# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (৬৪-বাইট সেফটি ক্যাপিং ফিক্স)
+# ৫. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (PM)
 @Client.on_callback_query(filters.regex(r"^tsearch\|"))
 async def tsearch_click_handler(client: Client, callback_query):
     query = callback_query.data.split("|")[1]
@@ -790,7 +870,7 @@ async def tsearch_click_handler(client: Client, callback_query):
     else:
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
 
-#6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
+# 6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
 @Client.on_message(filters.command("request"))
 @Client.on_callback_query(filters.regex(r"^req\|"))
 async def request_movie_handler(client: Client, callback_query):
@@ -944,6 +1024,7 @@ async def group_page_click_handler(client: Client, callback_query):
     target_page = int(data[1])
     query = data[2]
     searcher_id = int(data[3])
+    lang = data[4] if len(data) > 4 else "all"
     clicker_id = callback_query.from_user.id
     
     if clicker_id != searcher_id:
@@ -955,7 +1036,7 @@ async def group_page_click_handler(client: Client, callback_query):
         
     results, matched_query = await advanced_search_db(query)
     if results:
-        await send_group_results(callback_query, results, matched_query, page=target_page, searcher_id=searcher_id)
+        await send_group_results(callback_query, results, matched_query, page=target_page, lang=lang, searcher_id=searcher_id)
     await callback_query.answer()
 
 # ৯. সাজেস্টেড সার্চ ক্লিক হ্যান্ডলার (গ্রুপ চ্যাটের জন্য - ইউজার লকড)
@@ -976,7 +1057,7 @@ async def gtsearch_click_handler(client: Client, callback_query):
     await callback_query.message.delete()
     results, matched_query = await advanced_search_db(query)
     if results:
-        group_reply = await send_group_results(callback_query, results, matched_query, page=0, searcher_id=searcher_id)
+        group_reply = await send_group_results(callback_query, results, matched_query, page=0, lang="all", searcher_id=searcher_id)
         asyncio.create_task(auto_delete_group_reply(group_reply))
     else:
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
