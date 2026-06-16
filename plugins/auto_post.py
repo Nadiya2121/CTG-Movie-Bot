@@ -69,12 +69,11 @@ def detect_quality(name: str) -> str:
         print(f"Quality detection error: {e}")
     return "HD Quality"
 
-# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন (Multi-Language Bug Fixed) ---
+# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন ---
 def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
     filename_lower = filename.lower()
     detected_langs = []
     
-    # ভাষা সনাক্তকরণের ক্রম এবং ম্যাপিং
     lang_rules = [
         ("telugu", "Telugu"),
         ("tamil", "Tamil"),
@@ -93,7 +92,6 @@ def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
             if label not in detected_langs:
                 detected_langs.append(label)
                 
-    # যদি একাধিক ভাষা সনাক্ত হয় (যেমন: Telugu-Hindi বা Telugu-Hindi-English)
     if len(detected_langs) >= 2:
         return f"Dual Audio [{" + " + ".join(detected_langs) + "}]"
     elif len(detected_langs) == 1:
@@ -106,30 +104,26 @@ def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
     if "multi" in filename_lower:
         return "Multi Audio"
         
-    # ফলব্যাক হিসেবে টিএমডিবি ল্যাঙ্গুয়েজ কোড
     if tmdb_lang_code and tmdb_lang_code in LANG_MAP:
         return LANG_MAP[tmdb_lang_code]
         
     return "Not Specified"
 
-# --- অত্যন্ত শক্তিশালী ক্লিন-আপ ফাংশন (হিবিজিবি নাম দূর করার জন্য) ---
+# --- অত্যন্ত শক্তিশালী ক্লিন-আপ ফাংশন ---
 def advanced_clean_title(name: str) -> str:
     if not name or not isinstance(name, str):
         return "Movie File"
         
     name = re.sub(r'\.(mkv|mp4|avi|webm|ts|m4v|3gp)$', '', name, flags=re.IGNORECASE)
     
-    # টেলিগ্রাম ইউজারনেম, চ্যানেল লিংক এবং প্রমোশনাল টেক্সট রিমুভ
     name = re.sub(r'@[a-zA-Z0-9_]+', '', name)
     name = re.sub(r'(https?://)?(t\.me|telegram\.me|telegram\.dog)/[a-zA-Z0-9_\+]+', '', name)
     domain_extensions = "com|org|net|xyz|club|co|tv|link|info|me|cc|site|space|click|in|online|icu|buzz|movie|hub"
     name = re.sub(r'\b[a-zA-Z0-9-]+\.(' + domain_extensions + r')\b', '', name, flags=re.IGNORECASE)
     
-    # ব্র্যাকেট [...] এবং ফার্স্ট ব্র্যাকেট (...) এর ভেতরের হিবিজিবি তথ্য মুছে ফেলা
     name = re.sub(r'\[[^\]]*\]', ' ', name)
     name = re.sub(r'\((?!\d{4}\))[^\)]*\)', ' ', name)
     
-    # অপ্রয়োজনীয় রিলিজ ও ফাইল ফরম্যাট ট্যাগগুলো রিমুভ করা
     junk_keywords = [
         r'\bdual[- ]?audio\b', r'\bmulti[- ]?audio\b', r'\bhindi\b', r'\benglish\b', r'\bbengali\b', 
         r'\btamil\b', r'\btelugu\b', r'\bpunjabi\b', r'\bmalayalam\b', r'\bclean\b', r'\baud\b',
@@ -141,7 +135,6 @@ def advanced_clean_title(name: str) -> str:
     for kw in junk_keywords:
         name = re.sub(kw, ' ', name, flags=re.IGNORECASE)
     
-    # ডট, আন্ডারস্কোর এবং ড্যাশকে স্পেস দিয়ে রিপ্লেস করা
     name = name.replace(".", " ").replace("_", " ").replace("-", " ")
     name = re.sub(r'\s+', ' ', name).strip()
     name = name.title()
@@ -224,11 +217,9 @@ async def fetch_tmdb_metadata(raw_file_name: str):
         
     loop = asyncio.get_running_loop()
     
-    # প্রথম ধাপ: সম্পূর্ণ ক্লিন নাম দিয়ে সার্চ
     search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=en-US"
     data = await loop.run_in_executor(None, fetch_sync_url, search_url)
     
-    # দ্বিতীয় ধাপ: নাম বড় হলে প্রথম ৩ শব্দ দিয়ে সার্চ
     if not data or not data.get("results"):
         short_name = " ".join(movie_name.split()[:3])
         if short_name and short_name != movie_name:
@@ -260,7 +251,7 @@ async def fetch_tmdb_metadata(raw_file_name: str):
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হ্যান্ডলার ---
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_channel_post_handler(client: Client, message: Message):
-    # ডাটাবেজ অপারেশন সম্পন্ন হওয়ার জন্য সামান্য বিরতি
+    # ডাটাবেজ প্রসেস সম্পন্ন হওয়ার জন্য ২ সেকেন্ড বিরতি (গুরুত্বপূর্ণ)
     await asyncio.sleep(2)
     
     media = message.document or message.video
@@ -332,30 +323,31 @@ async def auto_channel_post_handler(client: Client, message: Message):
     existing_post = None
     use_aggregation = False
     
-    # --- [Race Condition Fix] সমান্তরাল ফাইল আপলোডে ডুপ্লিকেট পোস্ট হওয়া ঠেকাতে Atomic Upsert মেথড ---
+    # --- [Race Condition Safe Atomic Aggregation] ---
     try:
-        # প্রথমে নিশ্চিত করা হচ্ছে যে অবজেক্টটি ডাটাবেজে রয়েছে
-        await posts_col.update_one(
-            {"_id": unique_key},
-            {"$setOnInsert": {"msg_id": None, "files": []}},
-            upsert=True
-        )
-        
-        # ইউনিক db_id হলে তবেই অ্যারেতে নতুন ফাইল পুশ করা হবে
-        await posts_col.update_one(
-            {"_id": unique_key, "files.db_id": {"$ne": db_id}},
-            {"$push": {"files": file_info}}
-        )
-        
-        # চূড়ান্ত ও আপডেটেড ফাইল লিস্ট রিড করা
-        existing_post = await posts_col.find_one({"_id": unique_key})
-        if existing_post:
-            files_list = existing_post.get("files", [])
-            use_aggregation = True
-    except Exception as e:
-        print(f"Aggregation database error: {e}. Falling back to single-post behavior.")
+        # ১. প্রথমে পোস্টটি নতুন হিসেবে ইনসার্ট করার চেষ্টা করা হবে
+        await posts_col.insert_one({
+            "_id": unique_key,
+            "files": [file_info],
+            "msg_id": None
+        })
         files_list = [file_info]
-        use_aggregation = False
+        use_aggregation = True
+    except Exception:
+        # ২. যদি পোস্টটি অলরেডি ডাটাবেজে থাকে (DuplicateKeyError), তবে ডুপ্লিকেট এড়িয়ে নতুন ফাইলটি অ্যারেতে যুক্ত হবে
+        try:
+            await posts_col.update_one(
+                {"_id": unique_key},
+                {"$addToSet": {"files": file_info}}
+            )
+            existing_post = await posts_col.find_one({"_id": unique_key})
+            if existing_post:
+                files_list = existing_post.get("files", [])
+                use_aggregation = True
+        except Exception as e:
+            print(f"Bypass aggregation error: {e}")
+            files_list = [file_info]
+            use_aggregation = False
         
     # বাটন সাজানো
     def get_sort_key(item):
@@ -381,7 +373,7 @@ async def auto_channel_post_handler(client: Client, message: Message):
         
     size_str = "\n" + "\n".join(size_parts) if len(size_parts) > 3 else " | ".join(size_parts)
     
-    # পোস্টার লিংক নির্ধারণ
+    # poster link
     poster_url = DEFAULT_POSTER
     if movie_meta and movie_meta.get("poster_path"):
         poster_url = f"https://image.tmdb.org/t/p/w500{movie_meta['poster_path']}"
@@ -448,11 +440,11 @@ async def auto_channel_post_handler(client: Client, message: Message):
                 caption=caption_text,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
-            return  # এডিট সফল হলে এখানেই সম্পন্ন হবে
+            return
         except Exception as e:
             print(f"Failed to edit message {msg_id}: {e}. Posting a new update message instead.")
             
-    # নতুন পোস্ট পাঠানোর প্রক্রিয়া (ফটো পোস্ট)
+    # নতুন পোস্ট পাঠানোর প্রক্রিয়া
     try:
         sent_msg = await client.send_photo(
             chat_id=update_chat_id,
