@@ -1,3 +1,5 @@
+# plugins/auto_post.py
+
 import asyncio
 import re
 import urllib.parse
@@ -67,45 +69,44 @@ def detect_quality(name: str) -> str:
         print(f"Quality detection error: {e}")
     return "HD Quality"
 
-# --- ফাইলের নাম থেকে ভাষা সনাক্ত করার ফাংশন ---
+# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন (Multi-Language Bug Fixed) ---
 def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
     filename_lower = filename.lower()
     detected_langs = []
     
-    # ডুয়াল বা মাল্টি অডিও চেক
-    is_dual = "dual" in filename_lower or "multi" in filename_lower or "double" in filename_lower
+    # ভাষা সনাক্তকরণের ক্রম এবং ম্যাপিং
+    lang_rules = [
+        ("telugu", "Telugu"),
+        ("tamil", "Tamil"),
+        ("hindi", "Hindi"),
+        ("bengali", "Bengali"),
+        ("bangla", "Bengali"),
+        ("english", "English"),
+        ("malayalam", "Malayalam"),
+        ("kannada", "Kannada"),
+        ("korean", "Korean"),
+        ("japanese", "Japanese")
+    ]
     
-    # ভাষার কি-ওয়ার্ড খোঁজা
-    if "hindi" in filename_lower or "hin" in filename_lower:
-        detected_langs.append("Hindi")
-    if "english" in filename_lower or "eng" in filename_lower:
-        detected_langs.append("English")
-    if "bengali" in filename_lower or "bangla" in filename_lower or "ben" in filename_lower:
-        detected_langs.append("Bengali")
-    if "tamil" in filename_lower or "tam" in filename_lower:
-        detected_langs.append("Tamil")
-    if "telugu" in filename_lower or "tel" in filename_lower:
-        detected_langs.append("Telugu")
-    if "malayalam" in filename_lower or "mal" in filename_lower:
-        detected_langs.append("Malayalam")
-    if "kannada" in filename_lower or "kan" in filename_lower:
-        detected_langs.append("Kannada")
-    if "korean" in filename_lower or "kor" in filename_lower:
-        detected_langs.append("Korean")
-    if "japanese" in filename_lower or "jap" in filename_lower:
-        detected_langs.append("Japanese")
-
-    if detected_langs:
-        if is_dual and len(detected_langs) >= 2:
-            return f"Dual Audio [{" + " + ".join(detected_langs[:2]) + "}]"
-        elif is_dual:
+    for key, label in lang_rules:
+        if key in filename_lower:
+            if label not in detected_langs:
+                detected_langs.append(label)
+                
+    # যদি একাধিক ভাষা সনাক্ত হয় (যেমন: Telugu-Hindi বা Telugu-Hindi-English)
+    if len(detected_langs) >= 2:
+        return f"Dual Audio [{" + " + ".join(detected_langs) + "}]"
+    elif len(detected_langs) == 1:
+        if "dual" in filename_lower:
             return f"Dual Audio [{detected_langs[0]}]"
-        return " + ".join(detected_langs)
+        return detected_langs[0]
         
-    if is_dual:
+    if "dual" in filename_lower:
         return "Dual Audio"
-
-    # ফাইলনেমে ভাষা না পাওয়া গেলে টিএমডিবি মেটাডাটা থেকে সাহায্য নেওয়া হবে
+    if "multi" in filename_lower:
+        return "Multi Audio"
+        
+    # ফলব্যাক হিসেবে টিএমডিবি ল্যাঙ্গুয়েজ কোড
     if tmdb_lang_code and tmdb_lang_code in LANG_MAP:
         return LANG_MAP[tmdb_lang_code]
         
@@ -223,7 +224,7 @@ async def fetch_tmdb_metadata(raw_file_name: str):
         
     loop = asyncio.get_running_loop()
     
-    # প্রথম ধাপ: সম্পূর্ণ নাম দিয়ে সার্চ
+    # প্রথম ধাপ: সম্পূর্ণ ক্লিন নাম দিয়ে সার্চ
     search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={urllib.parse.quote(movie_name)}&language=en-US"
     data = await loop.run_in_executor(None, fetch_sync_url, search_url)
     
@@ -259,6 +260,7 @@ async def fetch_tmdb_metadata(raw_file_name: str):
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হ্যান্ডলার ---
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_channel_post_handler(client: Client, message: Message):
+    # ডাটাবেজ অপারেশন সম্পন্ন হওয়ার জন্য সামান্য বিরতি
     await asyncio.sleep(2)
     
     media = message.document or message.video
@@ -326,22 +328,32 @@ async def auto_channel_post_handler(client: Client, message: Message):
     }
     
     posts_col = user_db["channel_posts"]
-    files_list = [file_info]
+    files_list = []
     existing_post = None
     use_aggregation = False
     
+    # --- [Race Condition Fix] সমান্তরাল ফাইল আপলোডে ডুপ্লিকেট পোস্ট হওয়া ঠেকাতে Atomic Upsert মেথড ---
     try:
+        # প্রথমে নিশ্চিত করা হচ্ছে যে অবজেক্টটি ডাটাবেজে রয়েছে
+        await posts_col.update_one(
+            {"_id": unique_key},
+            {"$setOnInsert": {"msg_id": None, "files": []}},
+            upsert=True
+        )
+        
+        # ইউনিক db_id হলে তবেই অ্যারেতে নতুন ফাইল পুশ করা হবে
+        await posts_col.update_one(
+            {"_id": unique_key, "files.db_id": {"$ne": db_id}},
+            {"$push": {"files": file_info}}
+        )
+        
+        # চূড়ান্ত ও আপডেটেড ফাইল লিস্ট রিড করা
         existing_post = await posts_col.find_one({"_id": unique_key})
         if existing_post:
             files_list = existing_post.get("files", [])
-            if not any(f["db_id"] == db_id for f in files_list):
-                files_list.append(file_info)
-                await posts_col.update_one({"_id": unique_key}, {"$set": {"files": files_list}})
-        else:
-            await posts_col.insert_one({"_id": unique_key, "files": files_list, "msg_id": None})
-        use_aggregation = True
+            use_aggregation = True
     except Exception as e:
-        print(f"Aggregation database error: {e}")
+        print(f"Aggregation database error: {e}. Falling back to single-post behavior.")
         files_list = [file_info]
         use_aggregation = False
         
@@ -436,11 +448,11 @@ async def auto_channel_post_handler(client: Client, message: Message):
                 caption=caption_text,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
-            return  # এডিট সফল হলে এখানেই কাজ শেষ
+            return  # এডিট সফল হলে এখানেই সম্পন্ন হবে
         except Exception as e:
             print(f"Failed to edit message {msg_id}: {e}. Posting a new update message instead.")
             
-    # নতুন পোস্ট পাঠানোর প্রক্রিয়া (সর্বদা ফটো পোস্ট হিসেবে পাঠানো হবে)
+    # নতুন পোস্ট পাঠানোর প্রক্রিয়া (ফটো পোস্ট)
     try:
         sent_msg = await client.send_photo(
             chat_id=update_chat_id,
@@ -451,7 +463,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
     except Exception as e:
         print(f"Failed to send poster photo: {e}. Trying fallback to DEFAULT_POSTER.")
         try:
-            # যদি আসল ইউআরএল-এ সমস্যা থাকে তবে ডিফল্ট পোস্টার দিয়ে ট্রাই করবে
             sent_msg = await client.send_photo(
                 chat_id=update_chat_id,
                 photo=DEFAULT_POSTER,
@@ -461,7 +472,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
         except Exception as err:
             print(f"Failed to send default poster photo: {err}. Sending text instead.")
             try:
-                # একদম শেষে যদি ফটো পাঠানো ব্যর্থ হয়, তবে শুধু টেক্সট পাঠানো হবে
                 sent_msg = await client.send_message(
                     chat_id=update_chat_id,
                     text=caption_text,
