@@ -72,7 +72,7 @@ def detect_quality(name: str) -> str:
         print(f"Quality detection error: {e}")
     return "HD Quality"
 
-# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন (৩ অক্ষরের রিলিজ কোডসহ সমাধান) ---
+# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন (সিনট্যাক্স এরর ফিক্সড) ---
 def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
     filename_lower = filename.lower()
     detected_langs = []
@@ -99,7 +99,8 @@ def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
                 detected_langs.append(label)
                 
     if len(detected_langs) >= 2:
-        return f"Dual Audio [{" + " + ".join(detected_langs) + "}]"
+        langs_str = " + ".join(detected_langs)
+        return f"Dual Audio [{langs_str}]"
     elif len(detected_langs) == 1:
         if "dual" in filename_lower:
             return f"Dual Audio [{detected_langs[0]}]"
@@ -325,7 +326,6 @@ async def auto_channel_post_handler(client: Client, message: Message):
     }
     
     # --- [Race Condition Safe Multi-Task Locking] ---
-    # একই ইউনিক কি-এর প্রসেসগুলোকে ক্রমানুসারে লক করে ডাবল পোস্ট হওয়া সম্পূর্ণ বন্ধ করা হচ্ছে
     lock = post_locks.setdefault(unique_key, asyncio.Lock())
     
     async with lock:
