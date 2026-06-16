@@ -12,6 +12,9 @@ import config
 # database.py থেকে প্রয়োজনীয় কালেকশন এবং ইউজার ডাটাবেজ সরাসরি ইম্পোর্ট করা হলো
 from database import file_cols, user_db, save_file
 
+# --- গ্লোবাল লকিং ডিকশনারি (ডাবল পোস্ট হওয়া সম্পূর্ণ বন্ধ করার জন্য) ---
+post_locks = {}
+
 # --- ডিফল্ট পোস্টার লিংক (ছবি না পাওয়া গেলে এটি পোস্টার হিসেবে কাজ করবে) ---
 DEFAULT_POSTER = "https://graph.org/file/f3ecbcbc63345d3eb97c2.jpg"
 
@@ -69,26 +72,29 @@ def detect_quality(name: str) -> str:
         print(f"Quality detection error: {e}")
     return "HD Quality"
 
-# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন ---
+# --- অত্যন্ত নিখুঁত ও উন্নত ভাষা সনাক্তকরণ ফাংশন (৩ অক্ষরের রিলিজ কোডসহ সমাধান) ---
 def detect_language(filename: str, tmdb_lang_code: str = None) -> str:
     filename_lower = filename.lower()
     detected_langs = []
     
-    lang_rules = [
-        ("telugu", "Telugu"),
-        ("tamil", "Tamil"),
-        ("hindi", "Hindi"),
-        ("bengali", "Bengali"),
-        ("bangla", "Bengali"),
-        ("english", "English"),
-        ("malayalam", "Malayalam"),
-        ("kannada", "Kannada"),
-        ("korean", "Korean"),
-        ("japanese", "Japanese")
+    # ৩ অক্ষরের শর্ট কোড এবং পূর্ণ নাম সনাক্তকরণ রুলস
+    lang_patterns = [
+        (r'\b(telugu|tel)\b', "Telugu"),
+        (r'\b(tamil|tam)\b', "Tamil"),
+        (r'\b(hindi|hin)\b', "Hindi"),
+        (r'\b(bengali|bangla|ben)\b', "Bengali"),
+        (r'\b(english|eng)\b', "English"),
+        (r'\b(malayalam|mal)\b', "Malayalam"),
+        (r'\b(kannada|kan)\b', "Kannada"),
+        (r'\b(korean|kor)\b', "Korean"),
+        (r'\b(japanese|jap)\b', "Japanese")
     ]
     
-    for key, label in lang_rules:
-        if key in filename_lower:
+    # স্পেশাল ক্যারেক্টারগুলোকে স্পেস দিয়ে রিপ্লেস করে নরমাল করা
+    normalized_name = filename_lower.replace("-", " ").replace(".", " ").replace("_", " ").replace("[", " ").replace("]", " ")
+    
+    for pattern, label in lang_patterns:
+        if re.search(pattern, normalized_name):
             if label not in detected_langs:
                 detected_langs.append(label)
                 
@@ -251,7 +257,7 @@ async def fetch_tmdb_metadata(raw_file_name: str):
 # --- প্রধান চ্যানেলে মুভি/সিরিজ আপলোড হ্যান্ডলার ---
 @Client.on_message(filters.chat(config.MAIN_CHANNEL_ID) & (filters.document | filters.video))
 async def auto_channel_post_handler(client: Client, message: Message):
-    # ডাটাবেজ প্রসেস সম্পন্ন হওয়ার জন্য ২ সেকেন্ড বিরতি (গুরুত্বপূর্ণ)
+    # ডাটাবেজ প্রসেস সম্পন্ন হওয়ার জন্য ২ সেকেন্ড বিরতি
     await asyncio.sleep(2)
     
     media = message.document or message.video
@@ -318,167 +324,171 @@ async def auto_channel_post_handler(client: Client, message: Message):
         "episode": episode
     }
     
-    posts_col = user_db["channel_posts"]
-    files_list = []
-    existing_post = None
-    use_aggregation = False
+    # --- [Race Condition Safe Multi-Task Locking] ---
+    # একই ইউনিক কি-এর প্রসেসগুলোকে ক্রমানুসারে লক করে ডাবল পোস্ট হওয়া সম্পূর্ণ বন্ধ করা হচ্ছে
+    lock = post_locks.setdefault(unique_key, asyncio.Lock())
     
-    # --- [Race Condition Safe Atomic Aggregation] ---
-    try:
-        # ১. প্রথমে পোস্টটি নতুন হিসেবে ইনসার্ট করার চেষ্টা করা হবে
-        await posts_col.insert_one({
-            "_id": unique_key,
-            "files": [file_info],
-            "msg_id": None
-        })
-        files_list = [file_info]
-        use_aggregation = True
-    except Exception:
-        # ২. যদি পোস্টটি অলরেডি ডাটাবেজে থাকে (DuplicateKeyError), তবে ডুপ্লিকেট এড়িয়ে নতুন ফাইলটি অ্যারেতে যুক্ত হবে
+    async with lock:
+        posts_col = user_db["channel_posts"]
+        files_list = []
+        existing_post = None
+        use_aggregation = False
+        
         try:
-            await posts_col.update_one(
-                {"_id": unique_key},
-                {"$addToSet": {"files": file_info}}
-            )
-            existing_post = await posts_col.find_one({"_id": unique_key})
-            if existing_post:
-                files_list = existing_post.get("files", [])
-                use_aggregation = True
-        except Exception as e:
-            print(f"Bypass aggregation error: {e}")
+            # প্রথমে নতুন পোস্ট হিসেবে ইনসার্ট করার চেষ্টা করা হবে
+            await posts_col.insert_one({
+                "_id": unique_key,
+                "files": [file_info],
+                "msg_id": None
+            })
             files_list = [file_info]
-            use_aggregation = False
-        
-    # বাটন সাজানো
-    def get_sort_key(item):
-        return (item.get("season") or 0, item.get("episode") or 0, item.get("quality", ""))
-        
-    files_list = sorted(files_list, key=get_sort_key)
-    
-    buttons = []
-    size_parts = []
-    for f in files_list:
-        download_url = f"https://t.me/{bot_username}?start=app_{f['db_id']}"
-        ep_prefix = ""
-        if f.get("season") is not None and f.get("episode") is not None:
-            ep_prefix = f"S{f['season']:02d}E{f['episode']:02d} | "
-        elif f.get("episode") is not None:
-            ep_prefix = f"EP {f['episode']:02d} | "
+            use_aggregation = True
+        except Exception:
+            # যদি পোস্টটি অলরেডি ডাটাবেজে থাকে, তবে নতুন ফাইলটি পুশ করা হবে
+            try:
+                await posts_col.update_one(
+                    {"_id": unique_key},
+                    {"$addToSet": {"files": file_info}}
+                )
+                existing_post = await posts_col.find_one({"_id": unique_key})
+                if existing_post:
+                    files_list = existing_post.get("files", [])
+                    use_aggregation = True
+            except Exception as e:
+                print(f"Bypass aggregation error: {e}")
+                files_list = [file_info]
+                use_aggregation = False
             
-        btn_label = f"🍿 {ep_prefix}{f['quality']} - {f['size']} MB 🍿"
-        buttons.append([InlineKeyboardButton(btn_label, url=download_url)])
-        
-        size_label = f"{ep_prefix.replace(' | ', '')} ({f['quality']})" if ep_prefix else f"{f['quality']}"
-        size_parts.append(f"`{size_label}: {f['size']} MB`")
-        
-    size_str = "\n" + "\n".join(size_parts) if len(size_parts) > 3 else " | ".join(size_parts)
-    
-    # poster link
-    poster_url = DEFAULT_POSTER
-    if movie_meta and movie_meta.get("poster_path"):
-        poster_url = f"https://image.tmdb.org/t/p/w500{movie_meta['poster_path']}"
-        
-    # ক্যাপশন তৈরি
-    if movie_meta:
-        media_type = movie_meta.get("media_type", "movie")
-        if media_type == "tv":
-            title_raw = movie_meta.get("name") or movie_meta.get("original_name") or file_name
-            year = movie_meta.get("first_air_date", "N/A")[:4]
-            season_str = f" (Season {season})" if season is not None else ""
-            header_text = "📺 **NEW WEB SERIES ADDED!** 📺"
-            title_label = "Series Name"
-            display_title = f"{title_raw}{season_str}"
-        else:
-            title_raw = movie_meta.get("title") or movie_meta.get("original_title") or file_name
-            year = movie_meta.get("release_date", "N/A")[:4]
-            header_text = "🎬 **NEW MOVIE ADDED!** 🎬"
-            title_label = "Movie Name"
-            display_title = title_raw
+        # বাটন সাজানো
+        def get_sort_key(item):
+            return (item.get("season") or 0, item.get("episode") or 0, item.get("quality", ""))
             
-        if re.search(r'[\u0980-\u09ff]', title_raw):
-            title = cleaned_title
-        else:
-            title = display_title
+        files_list = sorted(files_list, key=get_sort_key)
+        
+        buttons = []
+        size_parts = []
+        for f in files_list:
+            download_url = f"https://t.me/{bot_username}?start=app_{f['db_id']}"
+            ep_prefix = ""
+            if f.get("season") is not None and f.get("episode") is not None:
+                ep_prefix = f"S{f['season']:02d}E{f['episode']:02d} | "
+            elif f.get("episode") is not None:
+                ep_prefix = f"EP {f['episode']:02d} | "
+                
+            btn_label = f"🍿 {ep_prefix}{f['quality']} - {f['size']} MB 🍿"
+            buttons.append([InlineKeyboardButton(btn_label, url=download_url)])
             
-        rating = movie_meta.get("vote_average", "N/A")
-        genre_ids = movie_meta.get("genre_ids", [])
-        genre_names = [GENRE_MAP.get(gid) for gid in genre_ids if GENRE_MAP.get(gid)]
-        genres = ", ".join(genre_names) if genre_names else "N/A"
+            size_label = f"{ep_prefix.replace(' | ', '')} ({f['quality']})" if ep_prefix else f"{f['quality']}"
+            size_parts.append(f"`{size_label}: {f['size']} MB`")
+            
+        size_str = "\n" + "\n".join(size_parts) if len(size_parts) > 3 else " | ".join(size_parts)
         
-        caption_text = (
-            f"{header_text}\n\n"
-            f"📝 **{title_label}:** `{title}` ({year})\n"
-            f"🌍 **Language:** `{detected_lang}`\n"
-            f"🌟 **Rating:** ⭐ `{rating}/10`\n"
-            f"🎭 **Genre:** `{genres}`\n"
-            f"💾 **Size:** {size_str}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🍿 Select your preferred episode/quality below to download instantly!"
-        )
-    else:
-        # ফলব্যাক সাধারণ ক্যাপশন
-        season_str = f" (Season {season})" if season is not None else ""
-        caption_text = (
-            f"🎬 **NEW FILE ADDED!** 🎬\n\n"
-            f"📝 **File Name:** `{cleaned_title}{season_str}`\n"
-            f"🌍 **Language:** `{detected_lang}`\n"
-            f"💾 **Size:** {size_str}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🍿 Select your preferred episode/quality below to download instantly!"
-        )
-        
-    update_chat_id = get_chat_id(config.UPDATE_CHANNEL_ID)
-    sent_msg = None
-    
-    # এডিট করার চেষ্টা করা হচ্ছে (যদি আগের মেসেজ আইডি থাকে)
-    if use_aggregation and existing_post and existing_post.get("msg_id"):
-        msg_id = existing_post["msg_id"]
-        try:
-            await client.edit_message_caption(
-                chat_id=update_chat_id,
-                message_id=msg_id,
-                caption=caption_text,
-                reply_markup=InlineKeyboardMarkup(buttons)
+        # poster link
+        poster_url = DEFAULT_POSTER
+        if movie_meta and movie_meta.get("poster_path"):
+            poster_url = f"https://image.tmdb.org/t/p/w500{movie_meta['poster_path']}"
+            
+        # ক্যাপশন তৈরি
+        if movie_meta:
+            media_type = movie_meta.get("media_type", "movie")
+            if media_type == "tv":
+                title_raw = movie_meta.get("name") or movie_meta.get("original_name") or file_name
+                year = movie_meta.get("first_air_date", "N/A")[:4]
+                season_str = f" (Season {season})" if season is not None else ""
+                header_text = "📺 **NEW WEB SERIES ADDED!** 📺"
+                title_label = "Series Name"
+                display_title = f"{title_raw}{season_str}"
+            else:
+                title_raw = movie_meta.get("title") or movie_meta.get("original_title") or file_name
+                year = movie_meta.get("release_date", "N/A")[:4]
+                header_text = "🎬 **NEW MOVIE ADDED!** 🎬"
+                title_label = "Movie Name"
+                display_title = title_raw
+                
+            if re.search(r'[\u0980-\u09ff]', title_raw):
+                title = cleaned_title
+            else:
+                title = display_title
+                
+            rating = movie_meta.get("vote_average", "N/A")
+            genre_ids = movie_meta.get("genre_ids", [])
+            genre_names = [GENRE_MAP.get(gid) for gid in genre_ids if GENRE_MAP.get(gid)]
+            genres = ", ".join(genre_names) if genre_names else "N/A"
+            
+            caption_text = (
+                f"{header_text}\n\n"
+                f"📝 **{title_label}:** `{title}` ({year})\n"
+                f"🌍 **Language:** `{detected_lang}`\n"
+                f"🌟 **Rating:** ⭐ `{rating}/10`\n"
+                f"🎭 **Genre:** `{genres}`\n"
+                f"💾 **Size:** {size_str}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🍿 Select your preferred episode/quality below to download instantly!"
             )
-            return
-        except Exception as e:
-            print(f"Failed to edit message {msg_id}: {e}. Posting a new update message instead.")
+        else:
+            # ফলব্যাক সাধারণ ক্যাপশন
+            season_str = f" (Season {season})" if season is not None else ""
+            caption_text = (
+                f"🎬 **NEW FILE ADDED!** 🎬\n\n"
+                f"📝 **File Name:** `{cleaned_title}{season_str}`\n"
+                f"🌍 **Language:** `{detected_lang}`\n"
+                f"💾 **Size:** {size_str}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🍿 Select your preferred episode/quality below to download instantly!"
+            )
             
-    # নতুন পোস্ট পাঠানোর প্রক্রিয়া
-    try:
-        sent_msg = await client.send_photo(
-            chat_id=update_chat_id,
-            photo=poster_url,
-            caption=caption_text,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    except Exception as e:
-        print(f"Failed to send poster photo: {e}. Trying fallback to DEFAULT_POSTER.")
+        update_chat_id = get_chat_id(config.UPDATE_CHANNEL_ID)
+        sent_msg = None
+        
+        # এডিট করার চেষ্টা করা হচ্ছে (যদি আগের মেসেজ আইডি থাকে)
+        if use_aggregation and existing_post and existing_post.get("msg_id"):
+            msg_id = existing_post["msg_id"]
+            try:
+                await client.edit_message_caption(
+                    chat_id=update_chat_id,
+                    message_id=msg_id,
+                    caption=caption_text,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                return
+            except Exception as e:
+                print(f"Failed to edit message {msg_id}: {e}. Posting a new update message instead.")
+                
+        # নতুন পোস্ট পাঠানোর প্রক্রিয়া
         try:
             sent_msg = await client.send_photo(
                 chat_id=update_chat_id,
-                photo=DEFAULT_POSTER,
+                photo=poster_url,
                 caption=caption_text,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
-        except Exception as err:
-            print(f"Failed to send default poster photo: {err}. Sending text instead.")
+        except Exception as e:
+            print(f"Failed to send poster photo: {e}. Trying fallback to DEFAULT_POSTER.")
             try:
-                sent_msg = await client.send_message(
+                sent_msg = await client.send_photo(
                     chat_id=update_chat_id,
-                    text=caption_text,
+                    photo=DEFAULT_POSTER,
+                    caption=caption_text,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
-            except Exception as msg_err:
-                print(f"Complete failure: {msg_err}")
-            
-    # ডেটাবেজে পোস্টের মেসেজ আইডি আপডেট রাখা হচ্ছে
-    if sent_msg and use_aggregation:
-        try:
-            await posts_col.update_one(
-                {"_id": unique_key},
-                {"$set": {"msg_id": sent_msg.id, "files": files_list}},
-                upsert=True
-            )
-        except Exception as e:
-            print(f"Failed to update post reference in DB: {e}")
+            except Exception as err:
+                print(f"Failed to send default poster photo: {err}. Sending text instead.")
+                try:
+                    sent_msg = await client.send_message(
+                        chat_id=update_chat_id,
+                        text=caption_text,
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                except Exception as msg_err:
+                    print(f"Complete failure: {msg_err}")
+                
+        # ডেটাবেজে পোস্টের মেসেজ আইডি আপডেট রাখা হচ্ছে
+        if sent_msg and use_aggregation:
+            try:
+                await posts_col.update_one(
+                    {"_id": unique_key},
+                    {"$set": {"msg_id": sent_msg.id, "files": files_list}},
+                    upsert=True
+                )
+            except Exception as e:
+                print(f"Failed to update post reference in DB: {e}")
