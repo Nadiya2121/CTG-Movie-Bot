@@ -490,138 +490,475 @@ HTML_STREAM_TEMPLATE = Template("""
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stream Movie - VIP Player</title>
-    <!-- টেলিগ্রাম ওয়েব অ্যাপ স্ক্রিপ্ট -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>$file_name - ᴘʀɪᴍᴇ ɴᴇᴛᴡᴏʀᴋ</title>
+    <link class="fav-icon" rel="icon" href="https://i.ibb.co/Hh4kF2b/icon.png" type="image/x-icon">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght=500;600;700;800&family=Poppins:wght=400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Plyr CSS -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    
     <style>
-        body {
-            background-color: #0b0c10;
-            color: #ffffff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            padding: 15px;
-            margin: 0;
+        :root {
+            --bg-body: #0b0f15;
+            --bg-card: #121824;
+            --bg-btn: #1a2232;
+            --text-primary: #ffffff;
+            --border-accent: #00e5ff;
+        }
+        body.light {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-btn: #e2e8f0;
+            --text-primary: #1e293b;
+            --border-accent: #2563eb;
+        }
+
+        :root {
+            --plyr-color-main: var(--border-accent);
+            --plyr-range-track-height: 4px; 
+            --plyr-range-thumb-height: 14px; 
+        }
+        .plyr__progress {
+            left: 0 !important; right: 0 !important; bottom: 0 !important;
+            position: absolute !important; width: 100% !important; padding: 0 !important; margin: 0 !important; z-index: 10;
+        }
+        .plyr--video .plyr__controls { padding-bottom: 15px !important; }
+
+        body { 
+            background-color: var(--bg-body) !important; color: var(--text-primary) !important; 
+            font-family: 'Poppins', sans-serif; transition: all 0.4s ease;
+        }
+
+        @keyframes bounce-icon { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        @keyframes pulse-icon { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+        @keyframes wiggle-icon { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-12deg); } 75% { transform: rotate(12deg); } }
+        @keyframes beat-icon { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.25); } 30% { transform: scale(1); } 45% { transform: scale(1.25); } 60% { transform: scale(1); } }
+
+        .anim-bounce { animation: bounce-icon 2s infinite ease-in-out; }
+        .anim-pulse { animation: pulse-icon 1.5s infinite ease-in-out; }
+        .anim-wiggle { animation: wiggle-icon 2s infinite linear; }
+        .anim-beat { animation: beat-icon 2.5s infinite ease-in-out; }
+
+        .btn-hover { transition: all 0.3s ease; }
+        .btn-hover:hover { transform: translateY(-2px); filter: brightness(1.2); }
+
+        .theme-wrapper {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            z-index: 10000; 
+        }
+
+        .theme-btn {
+            background: var(--bg-card);
+            border: 2px solid var(--border-accent);
+            padding: 8px 12px;
+            border-radius: 50px;
+            cursor: pointer;
             display: flex;
             align-items: center;
-            justify-content: center;
-            min-height: 95vh;
-        }
-        .container {
-            width: 100%;
-            max-width: 500px;
-            background: rgba(30, 30, 38, 0.65);
-            padding: 25px 15px;
-            border-radius: 24px;
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(0, 240, 255, 0.4);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-            text-align: center;
-        }
-        h2 { 
-            color: #00f0ff; 
-            margin: 0 0 15px 0; 
-            font-size: 24px; 
-            font-weight: 800;
-            text-transform: uppercase;
-            text-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
-        }
-        .video-player-box {
-            width: 100%;
-            background: #000;
-            border-radius: 14px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 20px;
-            aspect-ratio: 16/9;
-        }
-        video {
-            width: 100%;
-            height: 100%;
-        }
-        .info-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 14px;
-            padding: 12px;
-            margin-bottom: 20px;
-            text-align: left;
-            font-size: 13px;
-        }
-        .file-title {
-            color: #00ff88;
-            font-weight: bold;
-            word-break: break-all;
-        }
-        .btn-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .btn {
-            padding: 12px 10px;
-            border: none;
-            border-radius: 10px;
-            font-size: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            text-decoration: none;
-            color: white;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }
-        .btn-vlc { background: #e65c00; }
-        .btn-mx { background: #0080ff; }
-        .btn-playit { background: #33cc33; }
-        .btn-close { background: #374151; grid-column: span 2; }
-        .btn:hover { transform: scale(1.02); filter: brightness(1.1); }
-        .note {
+            gap: 8px;
             font-size: 11px;
-            color: #9ca3af;
-            line-height: 1.4;
+            font-weight: 800;
+            color: var(--text-primary);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        @media (max-width: 480px) {
+            .theme-btn span {
+                display: none; 
+            }
+            .theme-btn {
+                padding: 10px; 
+            }
+            .theme-wrapper {
+                top: 10px;
+                right: 10px;
+            }
+        }
+
+        .fixed-copyright {
+            position: fixed; bottom: 0; left: 0; width: 100%; background: var(--bg-body); 
+            backdrop-filter: blur(10px); text-align: center; padding: 10px 0; font-size: 11px; font-weight: bold;
+            border-top: 1px solid rgba(128, 128, 128, 0.2); z-index: 1000;
+        }
+        .dmca-floating { position: fixed; bottom: 65px; right: 20px; z-index: 999; }
+        @keyframes dmca-color {
+            0%, 100% { background-color: #00e5ff; color: #000; box-shadow: 0 0 20px rgba(0, 229, 255, 0.5); }
+            50% { background-color: #2563eb; color: #fff; box-shadow: 0 0 20px rgba(37, 99, 235, 0.6); }
+        }
+        .dmca-btn { animation: dmca-color 4s infinite ease-in-out; }
+
+        .bg-card-theme { background-color: var(--bg-card) !important; border-color: rgba(128, 128, 128, 0.2) !important; }
+        .bg-btn-theme { background-color: var(--bg-btn) !important; border-color: rgba(128, 128, 128, 0.2) !important; }
+
+        .plyr__controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .custom-player-btns {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .custom-player-btns button {
+            background: none;
+            border: none;
+            color: #00e5ff;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .custom-player-btns button:active { transform: scale(0.9); }
+
+        #brightness-popup {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px 25px;
+            border-radius: 15px;
+            border: 1px solid #00e5ff;
+            z-index: 200;
+            display: none; 
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.3);
+        }
+
+        #brightness-popup span { font-size: 10px; font-weight: bold; color: #00e5ff; }
+
+        #br-slider {
+            -webkit-appearance: none;
+            width: 150px;
+            height: 4px;
+            background: #333;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        #br-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 15px; height: 15px;
+            background: #00e5ff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        #brightness-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: black;
+            pointer-events: none;
+            opacity: 0; 
+            z-index: 1;
         }
     </style>
-    <script>
-        let tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
-        
-        function closeApp() {
-            tg.close();
-        }
-    </script>
 </head>
-<body>
-    <div class="container">
-        <h2>👑 VIP Streaming Player</h2>
-        
-        <div class="video-player-box">
-            <!-- HTML5 Player (MP4 ফাইল সরাসরি প্লে হবে) -->
-            <video controls poster="https://github.com/NBBotz/Images/blob/main/Lucia-Filter-Bot.jpeg?raw=true">
-                <source src="$stream_url" type="video/mp4">
-                Your browser does not support HTML5 video streaming.
-            </video>
+<body class="antialiased pb-32">
+
+    <!-- Theme Toggle -->
+    <div class="theme-wrapper">
+    <button id="theme-toggle-btn" class="theme-btn">
+        <i class="fa-solid fa-circle-half-stroke" id="theme-icon"></i>
+        <span id="theme-text">LIGHT MODE</span>
+    </button>
+    </div>
+
+    <!-- Header Section -->
+    <header class="flex flex-col items-center pt-14 pb-4"> 
+    <h1 class="text-3xl md:text-4xl font-extrabold flex items-center gap-3">
+        <i class="fas fa-clapperboard text-rose-600 anim-beat"></i>
+        <div><span class="text-pink-400">ᴘʀɪᴍᴇ</span> <span class="text-[#00e5ff]">ɴᴇᴛᴡᴏʀᴋ</span></div>
+    </h1>
+        <p class="text-[12px] text-gray-400 font-bold mt-1 anim-pulse uppercase tracking-widest">
+            <i class="fas fa-bolt"></i> 𝐏𝐫𝐢𝐦𝐞 𝐒𝐭𝐫𝐞𝐚𝐦𝐢𝐧𝐠 𝐏𝐥𝐚𝐭𝐟𝐨𝐫𝐦
+        </p>
+    </header>
+
+    <!-- Main Container -->
+    <main class="w-full max-w-[600px] mx-auto px-4 z-10 relative">
+        <div class="bg-card-theme rounded-xl overflow-hidden border shadow-2xl mb-6 flex flex-col relative">
+            <div class="p-4 border-b bg-card-theme">
+                <h2 class="text-[#00e5ff] text-[15px] font-bold flex items-start gap-2">
+                    <i class="fas fa-play-circle mt-1 anim-pulse"></i> $file_name
+                </h2>
+            </div>
+
+            <!-- Video Player -->
+            <div class="relative w-full aspect-video bg-black overflow-hidden">
+                <video id="player" playsinline controls preload="auto">
+                    <source src="$stream_url" type="video/mp4" />
+                </video>
+            </div>
+
+            <div class="flex justify-between p-3 px-5 text-[12px] font-black tracking-widest bg-card-theme">
+                <div class="text-gray-400"><span class="text-green-500">SIZE:</span> $file_size MB</div>
+                <div class="text-gray-400"><span class="text-green-500">TIME:</span> <span id="clock">00:00:00</span></div>
+            </div>
         </div>
-        
-        <div class="info-card">
-            <div>🎬 <span class="file-title">$file_name</span></div>
-            <div style="margin-top: 5px; color: #9ca3af;">💾 Size: <b>$file_size MB</b> | Status: <b style="color: #00ff88;">VIP Streaming Enabled ⚡️</b></div>
+
+        <!-- Buttons Section -->
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="streamDownload()" class="btn-hover bg-[#e11d48] text-white rounded-full py-2.5 font-bold text-sm shadow-lg">
+                    <i class="fas fa-bolt anim-bounce text-yellow-300 mr-1"></i> DOWNLOAD
+                </button>
+                <button onclick="watchOnline()" class="btn-hover bg-[#2563eb] text-white rounded-full py-2.5 font-bold text-sm shadow-lg">
+                    <i class="fas fa-folder-open anim-wiggle mr-1"></i> WATCH ONLINE
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="vlc_player()" class="btn-hover bg-btn-theme border text-gray-200 rounded-full py-2 text-[12px] font-bold">
+                    <i class="fas fa-video anim-beat text-orange-500 mr-1"></i> VLC PLAYER
+                </button>
+                <button onclick="mx_player()" class="btn-hover bg-btn-theme border text-gray-200 rounded-full py-2 text-[12px] font-bold">
+                    <i class="fas fa-play anim-pulse text-blue-400 mr-1"></i> MX PLAYER
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="playit_player()" class="btn-hover bg-btn-theme border text-green-400 rounded-full py-2 text-[12px] font-bold">
+                    <i class="fas fa-play-circle anim-beat mr-1"></i> PLAYIT
+                </button>
+                <button onclick="system_player()" class="btn-hover bg-btn-theme border text-yellow-400 rounded-full py-2 text-[12px] font-bold">
+                    <i class="fas fa-desktop anim-pulse mr-1"></i> SYSTEM
+                </button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="km_player()" class="btn-hover bg-btn-theme border text-gray-200 rounded-full py-2 text-[10px] font-bold">
+                    <i class="fas fa-film anim-bounce text-purple-400 mr-1"></i> KM PLAYER
+                </button>
+                <button onclick="kodi_player()" class="btn-hover bg-btn-theme border text-gray-200 rounded-full py-2 text-[10px] font-bold">
+                    <i class="fas fa-border-all anim-pulse text-blue-300 mr-1"></i> KODI
+                </button>
+                <button onclick="n_player()" class="btn-hover bg-btn-theme border text-cyan-400 rounded-full py-2 text-[10px] font-bold">
+                    <i class="fas fa-mobile-screen anim-wiggle mr-1"></i> NPLAYER
+                </button>
+            </div>
         </div>
-        
-        <div style="font-size: 12px; font-weight: bold; margin-bottom: 10px; color: #00f0ff;">👉 ব্রাউজারে প্লে না হলে বা MKV/অডিও সমস্যা হলে নিচের প্লেয়ারে ওপেন করুন:</div>
-        
-        <div class="btn-grid">
-            <a href="vlc://$stream_url" class="btn btn-vlc">🧡 Open in VLC</a>
-            <a href="intent:$stream_url#Intent;package=com.mxtech.videoplayer.ad;S.title=$file_name;end" class="btn btn-mx">💙 Open in MX Player</a>
-            <a href="intent:$stream_url#Intent;package=com.player.videoplayer;S.title=$file_name;end" class="btn btn-playit">💚 Open in Playit</a>
-            <button class="btn btn-close" onclick="closeApp()">🛑 Close Player</button>
-        </div>
-        
-        <div class="note">
-            ⚠️ <b>পরামর্শ:</b> MKV ফাইল বা ডুয়াল অডিও মুভিগুলো নির্বিঘ্নে দেখতে এবং বাংলা সাবটাইটেল সাপোর্ট করতে <b>VLC Player</b> অথবা <b>MX Player</b> ব্যবহার করুন।
+    </main>
+
+    
+    <div class="dmca-floating">
+        <button onclick="openModal()" class="dmca-btn px-6 py-2 rounded-full font-black text-xs uppercase shadow-2xl border border-white/20">
+            <i class="fas fa-shield-halved anim-wiggle mr-1"></i> DMCA
+        </button>
+    </div>
+
+    
+    <div class="fixed-copyright">
+        © 2022-2026 <a href="https://t.me/PrimeXBots" class="text-[#00e5ff] underline">ᴘʀɪᴍᴇXʙᴏᴛꜱ</a> | ꜱᴇᴄᴜʀᴇ ʙʏ ᴘʀɪᴍᴇ ɴᴇᴛᴡᴏʀᴋ 🤝
+    </div>
+
+    <!-- DMCA Modal -->
+    <div id="infoModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2000] hidden items-center justify-center p-4">
+        <div id="modalBox" class="bg-[#121824] border-2 border-[#1f2937] rounded-2xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl">
+            <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-[#121824]">
+                <h3 class="font-bold text-[#00e5ff] italic uppercase tracking-wider">
+                    <i class="fas fa-circle-info mr-2"></i> Bot Information
+                </h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-rose-500 text-2xl">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto space-y-4 max-h-[70vh]">
+                <div class="bg-gray-800/40 border-l-4 border-yellow-500 p-4 rounded-r-xl">
+                    <h4 class="text-yellow-500 font-bold mb-1 uppercase text-xs">
+                        <i class="fas fa-file-contract mr-1"></i> Disclaimer & DMCA
+                    </h4>
+                    <p class="text-[12px] text-gray-400 leading-relaxed font-medium">ᴀʟʟ ꜰɪʟᴇꜱ, ʟɪɴᴋꜱ, ᴀɴᴅ ᴍᴇᴅɪᴀ ᴀᴄᴄᴇꜱꜱᴇᴅ ᴛʜʀᴏᴜɢʜ ᴛʜɪꜱ ʙᴏᴛ ᴀʀᴇ ᴀʟʀᴇᴀᴅʏ ᴘᴜʙʟɪᴄʟʏ ᴀᴠᴀɪʟᴀʙʟᴇ ᴏɴ ᴛᴇʟᴇɢʀᴀᴍ. ᴛʜɪꜱ ʙᴏᴛ ᴅᴏᴇꜱ ɴᴏᴛ ʜᴏꜱᴛ ᴏʀ ꜱᴛᴏʀᴇ ᴀɴʏ ꜰɪʟᴇꜱ ᴏɴ ɪᴛꜱ ᴏᴡɴ ꜱᴇʀᴠᴇʀꜱ.</p>
+                </div>
+                <div class="bg-gray-800/40 border-l-4 border-blue-500 p-4 rounded-r-xl">
+                    <h4 class="text-blue-400 font-bold mb-2 uppercase text-xs">
+                        <i class="fas fa-bullhorn mr-1"></i> Bot Updates
+                    </h4>
+                    <p class="text-[12px] text-gray-400 mb-3 font-medium">ꜱᴛᴀʏ ᴜᴘᴅᴀᴛᴇᴅ ᴡɪᴛʜ ᴛʜᴇ ʟᴀᴛᴇꜱᴛ ᴀɴɴᴏᴜɴᴄᴇᴍᴇɴᴛꜱ, ꜰɪxᴇꜱ, ᴀɴᴅ ɴᴇᴡ ʙᴏᴛ ʀᴇʟᴇᴀꜱᴇꜱ.</p>
+                    <a href="https://t.me/PrimeXBots" target="_blank" class="inline-flex bg-blue-500/20 text-blue-400 border border-blue-500/50 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-blue-500/30">Join Channel <i class="fas fa-arrow-right ml-2"></i></a>
+                </div>
+                <div class="bg-gray-800/40 border-l-4 border-rose-500 p-4 rounded-r-xl">
+                    <h4 class="text-rose-400 font-bold mb-2 uppercase text-xs">
+                        <i class="fas fa-headset mr-1"></i> Contact Support
+                    </h4>
+                    <p class="text-[12px] text-gray-400 mb-3 font-medium">ꜰᴏʀ Qᴜᴇʀɪᴇꜱ, ᴄᴏᴘʏʀɪɢʜᴛ ɪꜱꜱᴜᴇꜱ, ᴏʀ ᴛᴀᴋᴇᴅᴏᴡɴ ʀᴇQᴜᴇꜱᴛꜱ, ʀᴇᴀᴄʜ ᴏᴜᴛ ᴛᴏ ᴜꜱ.</p>
+                    <a href="https://t.me/MR_PRIME_SUPREME" target="_blank" class="inline-flex bg-rose-500/20 text-rose-400 border border-rose-500/50 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-rose-500/30">Contact Developer <i class="fas fa-paper-plane ml-2"></i></a>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Scripts Section -->
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script>
+        const fileUrl = "$stream_url";
+        const fileName = "$file_name";
+
+        
+        function getCleanUrl() {
+            let url = fileUrl.trim();
+            if (url.startsWith("http:https://")) { url = url.replace("http:https://", "https://"); }
+            return url;
+        }
+
+        let player;
+        document.addEventListener('DOMContentLoaded', () => {
+           
+            player = new Plyr('#player', {
+                controls: [
+                    'play-large', 'play', 'progress', 'current-time', 
+                    'mute', 'volume', 'settings', 'fullscreen'
+                ],
+                ratio: '16:9'
+            });
+
+            
+            player.on('ready', () => {
+                const container = player.elements.container;
+
+               
+                const overlay = document.createElement('div');
+                overlay.id = 'brightness-overlay';
+                container.appendChild(overlay);
+
+                const brPopup = document.createElement('div');
+                brPopup.id = 'brightness-popup';
+                brPopup.innerHTML = `
+                    <span>BRIGHTNESS</span>
+                    <input type="range" id="br-slider" min="0" max="0.8" step="0.05" value="0.8">
+                `;
+                container.appendChild(brPopup);
+
+                
+                const controls = container.querySelector('.plyr__controls');
+                const middleSection = document.createElement('div');
+                middleSection.className = 'custom-player-btns';
+                middleSection.innerHTML = `
+                    <button id="custom-rewind" title="Rewind 10s"><i class="fas fa-backward"></i></button>
+                    <button id="br-toggle-btn" title="Brightness"><i class="fas fa-sun"></i></button>
+                    <button id="custom-forward" title="Forward 10s"><i class="fas fa-forward"></i></button>
+                `;
+
+                const playBtn = controls.querySelector('[data-plyr="play"]');
+                if (playBtn) playBtn.after(middleSection);
+
+               
+                document.getElementById('custom-rewind').onclick = (e) => { 
+                    e.stopPropagation(); 
+                    player.currentTime = Math.max(0, player.currentTime - 10); 
+                };
+                
+                document.getElementById('custom-forward').onclick = (e) => { 
+                    e.stopPropagation(); 
+                    player.currentTime = Math.min(player.duration, player.currentTime + 10); 
+                };
+
+               
+                const btn = document.getElementById('br-toggle-btn');
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    brPopup.style.display = (brPopup.style.display === 'flex') ? 'none' : 'flex';
+                };
+
+               
+                document.getElementById('br-slider').oninput = (e) => {
+                    const val = parseFloat(e.target.value);
+                    document.getElementById('brightness-overlay').style.opacity = (0.8 - val);
+                };
+
+                window.addEventListener('click', () => { brPopup.style.display = 'none'; });
+                brPopup.onclick = (e) => e.stopPropagation();
+                
+                player.volume = 1;
+                player.muted = false;
+            });
+            player.on('play', () => { player.muted = false; });
+        });
+
+        
+        function watchOnline() { 
+            if (player) { 
+                player.play(); 
+                player.fullscreen.enter(); 
+                
+                if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape').catch(err => {
+                        console.log("Orientation lock blocked: ", err);
+                    });
+                }
+            } 
+        }
+
+        
+        function streamDownload() {
+            const a = document.createElement('a');
+            a.href = getCleanUrl();
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        
+        function mx_player() { window.location.href = `intent:$${getCleanUrl()}#Intent;action=android.intent.action.VIEW;type=video/*;package=com.mxtech.videoplayer.ad;end`; }
+        function vlc_player() { window.location.href = `intent:$${getCleanUrl()}#Intent;action=android.intent.action.VIEW;type=video/*;package=org.videolan.vlc;end`; }
+        function playit_player() { window.location.href = `intent:$${getCleanUrl()}#Intent;action=android.intent.action.VIEW;type=video/*;package=com.playit.videoplayer;end`; }
+        function n_player() {
+            if (/Android/i.test(navigator.userAgent)) { window.location.href = `intent:$${getCleanUrl()}#Intent;action=android.intent.action.VIEW;type=video/*;package=com.newin.nplayer.pro;end`; }
+            else { window.location.href = `nplayer-$${getCleanUrl()}`; }
+        }
+        function system_player() { window.location.href = `intent:$${getCleanUrl()}#Intent;action=android.intent.action.VIEW;type=video/*;end`; }
+        function km_player() { window.location.href = `intent:$${getCleanUrl()}#Intent;action=android.intent.action.VIEW;type=video/*;package=com.kmplayer;end`; }
+        function kodi_player() { window.location.href = `intent:$${getCleanUrl()}#Intent;action=android.intent.action.VIEW;type=video/*;package=org.xbmc.kodi;end`; }
+
+       
+        function updateClock() { document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }
+        setInterval(updateClock, 1000); updateClock();
+
+        function copyToClipboard() { navigator.clipboard.writeText(window.location.href).then(() => alert("Link Copied!")); }
+
+        function openModal() { 
+            const m = document.getElementById('infoModal');
+            m.classList.remove('hidden'); m.classList.add('flex');
+            setTimeout(() => document.getElementById('modalBox').classList.add('modal-active-anim'), 10);
+        }
+        function closeModal() { 
+            document.getElementById('modalBox').classList.remove('modal-active-anim');
+            setTimeout(() => { document.getElementById('infoModal').classList.add('hidden'); }, 400);
+        }
+
+       
+        const themeBtn = document.getElementById("theme-toggle-btn");
+        function applyTheme(mode) {
+            if (mode === "light") {
+                document.body.classList.add("light");
+                document.getElementById("theme-icon").className = "fa-solid fa-moon text-blue-600";
+                document.getElementById("theme-text").innerText = "DARK MODE";
+            } else {
+                document.body.classList.remove("light");
+                document.getElementById("theme-icon").className = "fa-solid fa-sun text-[#00e5ff]";
+                document.getElementById("theme-text").innerText = "LIGHT MODE";
+            }
+        }
+        themeBtn.addEventListener("click", () => {
+            const isLight = document.body.classList.contains("light");
+            const newTheme = isLight ? "dark" : "light";
+            localStorage.setItem("prime_pref", newTheme);
+            applyTheme(newTheme);
+        });
+        applyTheme(localStorage.getItem("prime_pref") || "dark");
+    </script>    
 </body>
 </html>
 """)
