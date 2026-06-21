@@ -54,13 +54,27 @@ def normalize_text(text: str) -> str:
     return unicodedata.normalize('NFKC', text).strip()
 
 
+def clean_name_for_comparison(text: str) -> str:
+    """
+    ফাইলের এক্সটেনশন এবং অতিরিক্ত ডট, ড্যাশ, আন্ডারস্কোর রিমুভ করে সম্পূর্ণ ক্লিন টেক্সট রিটার্ন করে।
+    এটি সঠিক সর্টিং নিশ্চিত করতে সাহায্য করে।
+    """
+    if not text:
+        return ""
+    # ফাইলের এক্সটেনশন (.mkv, .mp4 ইত্যাদি) থাকলে তা বাদ দেওয়া হচ্ছে
+    text = re.sub(r'\.(mkv|mp4|webm|avi|zip|tar|rar)$', '', text, flags=re.I)
+    # ডট, আন্ডারস্কোর ও হাইফেন স্পেস দিয়ে রিপ্লেস করা হচ্ছে
+    text = text.replace(".", " ").replace("_", " ").replace("-", " ").lower()
+    return " ".join(text.split())
+
+
 # ==========================================
 #  ২. ডায়নামিক অটো-সুইচিং লজিক (রিয়েল-টাইম কাউন্টার)
 # ==========================================
 
 async def get_active_files_collection():
     """
-    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনফিগ লিমিট) এর নিচে আছে,
+    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনфিগ লিমিট) এর নিচে আছে,
     সেটির কালেকশন রিটার্ন করবে। ১ম ফাইল ডাটাবেজটি (Index 0) নতুন ফাইল সেভের ক্ষেত্রে সম্পূর্ণ স্কিপ করা হবে।
     """
     if not file_cols or len(file_cols) < 2:
@@ -194,7 +208,7 @@ async def save_file(file_name, file_size, file_id, chat_id, message_id):
 # ==========================================
 
 async def search_db(query):
-    # [নতুন পরিবর্তন]: ইউজার যদি কোনো ফ্যান্সি ফন্টে সার্চ করে, তবে সেটিকেও প্রথমে নরমালাইজ করা হচ্ছে
+    # ইউজার যদি কোনো ফ্যান্সি ফন্টে সার্চ করে, তবে সেটিকে প্রথমে নরমালাইজ করা হচ্ছে
     normalized_query = normalize_text(query)
     clean_q = normalized_query.lower().replace(".", " ").replace("_", " ").replace("-", " ")
     words = clean_q.strip().split()
@@ -219,16 +233,37 @@ async def search_db(query):
         if len(results) >= 100:
             break
                 
-    # রিয়েল-টাইম সর্টিং (ইউজারের খোঁজা নামের সাথে সবচেয়ে মিল থাকা ফাইলটি আগে দেখাবে)
+    # উন্নত রিয়েল-টাইম সর্টিং (হুবহু ও সঠিক মিল থাকা ফাইলগুলো সবার আগে আসবে)
     def get_sort_key(doc):
-        name = doc.get("file_name", "Movie File").lower()
-        q = normalized_query.lower() # সর্টিং মেকানিজমেও নরমালাইজড কোয়েরি ব্যবহার করা হচ্ছে
-        if q == name:
+        name = doc.get("file_name", "Movie File")
+        
+        # তুলনা সহজ করার জন্য নাম ও কুয়েরি সম্পূর্ণ ক্লিন করে নেওয়া হচ্ছে
+        clean_file_name = clean_name_for_comparison(name)
+        clean_user_query = clean_name_for_comparison(normalized_query)
+        
+        query_words = clean_user_query.split()
+        file_words = clean_file_name.split()
+        
+        # ১. হুবহু মিল (১০০% ম্যাচ - এক্সটেনশন বাদে) -> সর্বোচ্চ অগ্রাধিকার
+        if clean_user_query == clean_file_name:
             return 0
-        if name.startswith(q):
-            return 1
-        ratio = difflib.SequenceMatcher(None, q, name).ratio()
-        return 2 - ratio
+            
+        # ২. শব্দের শুরুতেই হুবহু মিল (যেমন: "Leo" matched with "Leo 2023 Dual Audio") -> ২য় অগ্রাধিকার
+        if file_words[:len(query_words)] == query_words:
+            # নাম যত ছোট হবে, তত উপরে থাকবে
+            return 1 + (len(clean_file_name) - len(clean_user_query)) / 10000.0
+            
+        # ৩. ফাইলের নামের মাঝে কোনো স্থানে সম্পূর্ণ শব্দগুচ্ছের মিল (যেমন: "Leo" in "The Legend Leo 2023")
+        if f" {clean_user_query} " in f" {clean_file_name} ":
+            return 2 + (len(clean_file_name) - len(clean_user_query)) / 10000.0
+            
+        # ৪. সাধারণ স্টার্টস-উইথ ম্যাচ (সাব-ওয়ার্ড হিসেবে মিললে, যেমন: "leonard" starts with "leo")
+        if clean_file_name.startswith(clean_user_query):
+            return 3 + (len(clean_file_name) - len(clean_user_query)) / 10000.0
+            
+        # ৫. সিকোয়েন্স মিলের হার (difflib ratio) -> সর্বনিম্ন অগ্রাধিকার
+        ratio = difflib.SequenceMatcher(None, clean_user_query, clean_file_name).ratio()
+        return 4 - ratio
 
     results.sort(key=get_sort_key)
     return results[:30] # সেরা ৩০টি রেজাল্ট রিটার্ন করবে
