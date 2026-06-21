@@ -7,3 +7,4 @@ python-Levenshtein==0.27.3
 psutil
 dnspython
 SpeechRecognition
+ffmpeg
