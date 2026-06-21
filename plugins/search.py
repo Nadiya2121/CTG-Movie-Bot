@@ -217,24 +217,39 @@ async def advanced_search_db(query: str):
     return [], query
 
 
-# --- এআই ভয়েস সার্চ হ্যান্ডলার (ভয়েস রিসিভার) ---
+# --- এআই ভয়েস সার্চ হ্যান্ডলার (ভয়েস রিসিভার - ক্র্যাশপ্রুফ সংস্করণ) ---
 @Client.on_message(filters.voice)
 async def voice_search_handler(client: Client, message: Message):
     user_id = message.from_user.id if message.from_user else 0
-    status_msg = await message.reply_text("🎙 **আপনার কণ্ঠস্বর বিশ্লেষণ করা হচ্ছে...**")
+    
+    try:
+        status_msg = await message.reply_text("🎙 **আপনার কণ্ঠস্বর বিশ্লেষণ করা হচ্ছে...**")
+    except Exception:
+        return
     
     transcribed_text = await transcribe_voice(client, message)
     
     if not transcribed_text:
-        await status_msg.edit_text("❌ দুঃখিত, আপনার ভয়েস মেসেজটি স্পষ্ট বোঝা যায়নি। দয়া করে আবার চেষ্টা করুন বা লিখে সার্চ করুন।")
+        try:
+            await status_msg.edit_text("❌ দুঃখিত, আপনার ভয়েস মেসেজটি স্পষ্ট বোঝা যায়নি। দয়া করে আবার চেষ্টা করুন বা লিখে সার্চ করুন।")
+        except Exception:
+            pass
         asyncio.create_task(auto_delete_group_reply(status_msg))
         return
         
-    await status_msg.edit_text(f"🔍 **শনাক্ত করা নাম:** `{transcribed_text}`\n🔎 মুভি খোঁজা হচ্ছে...")
+    try:
+        await status_msg.edit_text(f"🔍 **শনাক্ত করা নাম:** `{transcribed_text}`\n🔎 মুভি খোঁজা হচ্ছে...")
+    except Exception:
+        pass
+        
     results, matched_query = await advanced_search_db(transcribed_text)
     
     if results:
-        await status_msg.delete()
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+            
         if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             group_reply = await send_group_results(message, results, matched_query, page=0, lang="all", searcher_id=user_id)
             asyncio.create_task(auto_delete_group_reply(group_reply, message))
@@ -245,11 +260,15 @@ async def voice_search_handler(client: Client, message: Message):
         # মুভি পাওয়া না গেলে
         safe_query = safe_bytes_truncate(transcribed_text, 55)
         req_buttons = [[InlineKeyboardButton("📢 Request Admin", callback_data=f"req|{safe_query}")]]
-        await status_msg.edit_text(
-            f"❌ দুঃখিত, **'{transcribed_text}'** মুভিটি পাওয়া যায়নি।\n"
-            f"👉 আপনি চাইলে নিচের বাটনে চাপ দিয়ে এডমিনকে রিকোয়েস্ট করতে পারেন।",
-            reply_markup=InlineKeyboardMarkup(req_buttons)
-        )
+        try:
+            await status_msg.edit_text(
+                f"❌ দুঃখিত, **'{transcribed_text}'** মুভিটি পাওয়া যায়নি।\n"
+                f"👉 আপনি চাইলে নিচের বাটনে চাপ দিয়ে এডমিনকে রিকোয়েস্ট করতে পারেন।",
+                reply_markup=InlineKeyboardMarkup(req_buttons)
+            )
+        except Exception:
+            pass
+            
         if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             asyncio.create_task(auto_delete_group_reply(status_msg, message))
         else:
@@ -1061,7 +1080,7 @@ async def admin_request_action_handler(client: Client, callback_query):
         user_msg = (
             f"⚠️ **মুভি রিকোয়েস্ট আপডেট!**\n\n"
             f"🎬 মুভি: `{movie_name}`\n"
-            f"📢 স্ট্যাটাস: **মুভিটি এখনো ওটিটি বা থিয়েটারে রিলিজ হয়নি।**\n\n"
+            f"📢 স্ট্যাটাস: **মুভিটি এখনো ওটিটি বা থিয়াটারে রিলিজ হয়নি।**\n\n"
             f"রিলিজ হওয়ার পর আমাদের ডাটাবেজে যুক্ত করে দেওয়া হবে। ধন্যবাদ!"
         )
         try:
