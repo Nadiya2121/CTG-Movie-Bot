@@ -76,13 +76,18 @@ async def auto_delete_search_messages(user_msg: Message, bot_msg: Message):
     except:
         pass
 
-# --- গ্রুপে বটের রিপ্লাই ৫ মিনিট পর ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
-async def auto_delete_group_reply(message: Message):
+# --- গ্রুপে বটের রিপ্লাই এবং ইউজারের রিকোয়েস্ট মেসেজ ৫ মিনিট পর একসাথে ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
+async def auto_delete_group_reply(bot_msg: Message, user_msg: Message = None):
     await asyncio.sleep(300) # ৩০০ সেকেন্ড = ৫ মিনিট
     try:
-        await message.delete()
+        await bot_msg.delete()
     except:
         pass
+    if user_msg:
+        try:
+            await user_msg.delete()
+        except:
+            pass
 
 # --- 🍿 মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার 🍿 ---
 async def get_close_match_from_db(query: str):
@@ -367,7 +372,8 @@ async def main_handler(client: Client, message: Message):
             else:
                 welcome_msg = await message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(start_buttons))
 
-            asyncio.create_task(auto_delete_search_messages(message, welcome_msg))
+            # [আপডেট]: মেইন স্টার্ট স্বাগতম বার্তা স্থায়ীভাবে রাখার জন্য অটো-ডিলিট টাস্ক বন্ধ করা হয়েছে।
+            # asyncio.create_task(auto_delete_search_messages(message, welcome_msg))
             return
 
         if text.startswith("/"):
@@ -457,7 +463,8 @@ async def main_handler(client: Client, message: Message):
         # গ্রুপ চ্যাটেও প্রথমে হুবহু অ্যান্ড সার্চ
         if results:
             group_reply = await send_group_results(message, results, query, page=0, lang="all", searcher_id=user_id)
-            asyncio.create_task(auto_delete_group_reply(group_reply))
+            # [আপডেট]: ৫ মিনিট পর ফাইল মেসেজের সাথে ইউজারের রিকোয়েস্ট মেসেজও ডিলিট হবে
+            asyncio.create_task(auto_delete_group_reply(group_reply, message))
             return
             
         # গ্রুপ চ্যাটের বানান এআই সংশোধন লজিক
@@ -475,14 +482,16 @@ async def main_handler(client: Client, message: Message):
                 f"🤔 আপনি কি **'{closest_match}'** মুভিটি খুঁজছেন?",
                 reply_markup=InlineKeyboardMarkup(suggestion_buttons)
             )
-            asyncio.create_task(auto_delete_group_reply(suggestion_msg))
+            # [আপডেট]: ৫ মিনিট পর সাজেশন মেসেজের সাথে ইউজারের রিকোয়েস্ট মেসেজও ডিলিট হবে
+            asyncio.create_task(auto_delete_group_reply(suggestion_msg, message))
             return
             
         # গ্রুপ চ্যাটের প্রোগ্রেসিভ সার্চ লজিক
         results, matched_query = await advanced_search_db(query)
         if results:
             group_reply = await send_group_results(message, results, matched_query, page=0, lang="all", searcher_id=user_id)
-            asyncio.create_task(auto_delete_group_reply(group_reply))
+            # [আপডেট]: ৫ মিনিট পর ফাইল মেসেজের সাথে ইউজারের রিকোয়েস্ট মেসেজও ডিলিট হবে
+            asyncio.create_task(auto_delete_group_reply(group_reply, message))
             return
             
         # গ্রুপ চ্যাটের মুভি রিকোয়েস্ট বাটন
@@ -498,7 +507,8 @@ async def main_handler(client: Client, message: Message):
             f"👉 আপনি চাইলে নিচের বাটনে চাপ দিয়ে এডমিনকে রিকোয়েস্ট করতে পারেন।",
             reply_markup=InlineKeyboardMarkup(req_buttons)
         )
-        asyncio.create_task(auto_delete_group_reply(not_found_msg))
+        # [আপডেট]: ৫ মিনিট পর রিকোয়েস্ট মেসেজ ডিলিট হবে
+        asyncio.create_task(auto_delete_group_reply(not_found_msg, message))
 
 
 # সার্চ রেজাল্ট পেজ আকারে সাজানো এবং ল্যাঙ্গুয়েজ ফিল্টারিং বাটন (PM চ্যাটের জন্য)
@@ -959,7 +969,7 @@ async def admin_request_action_handler(client: Client, callback_query):
         user_msg = (
             f"⚠️ **মুভি রিকোয়েস্ট আপডেট!**\n\n"
             f"🎬 মুভি: `{movie_name}`\n"
-            f"📢 স্ট্যাটাস: **মুভিটি এখনো ওটিটি বা থিয়েটারে রিলিজ হয়নি।**\n\n"
+            f"📢 স্ট্যাটাস: **মুভিটি এখনো ওটিটি বা থিয়াটারে রিলিজ হয়নি।**\n\n"
             f"রিলিজ হওয়ার পর আমাদের ডাটাবেজে যুক্ত করে দেওয়া হবে। ধন্যবাদ!"
         )
         try:
@@ -1058,6 +1068,7 @@ async def gtsearch_click_handler(client: Client, callback_query):
     results, matched_query = await advanced_search_db(query)
     if results:
         group_reply = await send_group_results(callback_query, results, matched_query, page=0, lang="all", searcher_id=searcher_id)
+        # সাজেস্টেড ক্লিক থেকে আসা রেজাল্টও ৫ মিনিট পর ডিলিট হবে
         asyncio.create_task(auto_delete_group_reply(group_reply))
     else:
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
