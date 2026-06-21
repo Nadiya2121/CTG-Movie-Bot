@@ -74,7 +74,7 @@ def clean_name_for_comparison(text: str) -> str:
 
 async def get_active_files_collection():
     """
-    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনфিগ লিমিট) এর নিচে আছে,
+    ফাইল ডাটাবেজগুলোর সাইজ চেক করে প্রথম যে ডাটাবেজটি ৪০০ এমবি (কনফিগ লিমিট) এর নিচে আছে,
     সেটির কালেকশন রিটার্ন করবে। ১ম ফাইল ডাটাবেজটি (Index 0) নতুন ফাইল সেভের ক্ষেত্রে সম্পূর্ণ স্কিপ করা হবে।
     """
     if not file_cols or len(file_cols) < 2:
@@ -447,15 +447,28 @@ async def get_all_users():
 
 async def save_movie_request(user_id, query):
     normalized_query = normalize_text(query)
-    exists = await requests_col.find_one({"user_id": user_id, "query": normalized_query, "status": "pending"})
-    if not exists:
+    # পেন্ডিং থাকা রিকোয়েস্ট আছে কিনা চেক করা হচ্ছে
+    exists = await requests_col.find_one({"query": normalized_query, "status": "pending"})
+    
+    if exists:
+        # ইউজার যদি ইতিমধ্যে রিকোয়েস্ট লিস্টে থেকে থাকেন
+        if user_id in exists.get("users", []):
+            return False, len(exists.get("users", []))
+            
+        # নতুন ইউজার হিসেবে যুক্ত করে কাউন্টার বাড়ানো হচ্ছে
+        await requests_col.update_one(
+            {"_id": exists["_id"]},
+            {"$push": {"users": user_id}}
+        )
+        return True, len(exists.get("users", [])) + 1
+    else:
+        # একদম নতুন মুভির রিকোয়েস্ট
         await requests_col.insert_one({
-            "user_id": user_id,
             "query": normalized_query,
+            "users": [user_id],
             "status": "pending"
         })
-        return True
-    return False
+        return True, 1
 
 # --- প্রিমিয়াম ইউজার কন্ট্রোল ---
 async def add_premium_user(user_id: int):
