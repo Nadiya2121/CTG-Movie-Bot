@@ -115,10 +115,10 @@ async def transcribe_voice(client, message: Message) -> str:
             
         # বাংলা এবং ইংরেজি উভয় ভাষার ভয়েস সার্চ সাপোর্ট করার জন্য ট্রাই করা হচ্ছে
         try:
-            # প্রথমে বাংলা সার্চ ট্রাই করা হবে
+            # প্রথমে বাংলা ভাষা ট্রাই করা হচ্ছে
             text = recognizer.recognize_google(audio_data, language="bn-BD")
         except:
-            # বাংলা না বুঝলে ইংরেজি হিসেবে ট্র্যাক করবে
+            # বাংলা না বুঝলে ইংরেজি হিসেবে ট্রাই করা হচ্ছে
             text = recognizer.recognize_google(audio_data, language="en-US")
             
         return text.strip()
@@ -128,9 +128,11 @@ async def transcribe_voice(client, message: Message) -> str:
     finally:
         # টেম্পোরারি ফাইলগুলো মুছে ফেলা হচ্ছে
         if os.path.exists(temp_ogg):
-            os.remove(temp_ogg)
+            try: os.remove(temp_ogg)
+            except: pass
         if os.path.exists(temp_wav):
-            os.remove(temp_wav)
+            try: os.remove(temp_wav)
+            except: pass
 
 # --- 🍿 মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার 🍿 ---
 async def get_close_match_from_db(query: str):
@@ -981,7 +983,7 @@ async def tsearch_click_handler(client: Client, callback_query):
     else:
         await callback_query.answer("দুঃখিত, কোনো ফাইল পাওয়া যায়নি!", show_alert=True)
 
-# 6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম
+# 6. মুভি রিকোয়েস্ট সেভ হ্যান্ডলার এবং এডমিন নোটিফিকেশন সিস্টেম (ডাইনামিক কাউন্টার সহ)
 @Client.on_message(filters.command("request"))
 @Client.on_callback_query(filters.regex(r"^req\|"))
 async def request_movie_handler(client: Client, callback_query):
@@ -1003,51 +1005,60 @@ async def request_movie_handler(client: Client, callback_query):
     username = f"@{user.username}" if user.username else "নেই"
     first_name = user.first_name or "ইউজার"
     
-    from database import save_movie_request
-    saved = await save_movie_request(user_id, query)
+    # database.py এর নতুন ডাইনামিক রিকোয়েস্ট ফাংশন থেকে ট্র্যাকিং রেসপন্স নেওয়া হচ্ছে
+    saved, req_count = await save_movie_request(user_id, query)
     
     if saved:
         success_text = (
-            f"✅ **মুভি রিকোয়েস্ট পাঠানো হয়েছে!**\n\n"
-            f"🎬 মুভির নাম: `{query}`\n\n"
-            f"👉 এডমিন মুভিটি আপলোড করার সাথে সাথে আপনার ইনবক্সে নোটিফিকেশন চলে আসবে।"
+            f"✅ **মুভি রিকোয়েস্ট আপডেট!**\n\n"
+            f"🎬 মুভির নাম: `{query}`\n"
+            f"👥 রিকোয়েস্টকারী সংখ্যা: **{req_count} জন**\n\n"
+            f"👉 এডমিন মুভিটি আপলোড করার সাথে সাথে আপনাদের ইনবক্সে নোটিফিকেশন চলে আসবে।"
         )
         if is_callback:
-            await callback_query.answer("✅ আপনার রিকোয়েস্টটি এডমিনের কাছে পাঠানো হয়েছে!", show_alert=True)
-            await msg_ctx.edit_text(success_text)
+            await callback_query.answer("✅ রিকোয়েস্টে আপনাকে যুক্ত করা হয়েছে!", show_alert=True)
+            # বাটন টেক্সটে ডাইনামিক লাইভ রিকোয়েস্ট কাউন্ট আপডেট করা হচ্ছে
+            safe_query = safe_bytes_truncate(query, 20)
+            updated_buttons = [[InlineKeyboardButton(f"👥 Requested: {req_count} Users", callback_data=f"req|{safe_query}")]]
+            try:
+                await msg_ctx.edit_text(success_text, reply_markup=InlineKeyboardMarkup(updated_buttons))
+            except:
+                pass
         else:
             await msg_ctx.reply_text(success_text)
         
-        log_text = (
-            f"🍿 **নতুন মুভি রিকোয়েস্ট এসেছে!**\n\n"
-            f"👤 **ইউজার:** [{first_name}](tg://user?id={user_id})\n"
-            f"🔗 **ইউজারনেম:** {username}\n"
-            f"🎬 **মুভি:** {query}\n\n"
-            f"🆔 **(রিকোয়েস্ট আইডি: {user_id})**"
-        )
-        
-        admin_buttons = [
-            [
-                InlineKeyboardButton("🚫 রিলিজ হয়নি", callback_data=f"admin_req|not_released|{user_id}"),
-                InlineKeyboardButton("❌ বানান ভুল", callback_data=f"admin_req|wrong_sp|{user_id}")
-            ],
-            [
-                InlineKeyboardButton("🟢 আপলোড হয়েছে", callback_data=f"admin_req|uploaded|{user_id}"),
-                InlineKeyboardButton("✍️ কাস্টম মেসেজ", callback_data=f"admin_req|custom|{user_id}")
+        # প্রথম রিকোয়েস্টে নোটিফিকেশন যাবে অ্যাডমিন লগে, বাকিগুলোর লাইভ কাউন্ট আপডেট হবে
+        if req_count == 1:
+            log_text = (
+                f"🍿 **নতুন মুভি রিকোয়েস্ট এসেছে!**\n\n"
+                f"👤 **ইউজার:** [{first_name}](tg://user?id={user_id})\n"
+                f"🔗 **ইউজারনেম:** {username}\n"
+                f"🎬 **মুভি:** {query}\n\n"
+                f"🆔 **(রিকোয়েস্ট আইডি: {user_id})**"
+            )
+            
+            admin_buttons = [
+                [
+                    InlineKeyboardButton("🚫 রিলিজ হয়নি", callback_data=f"admin_req|not_released|{user_id}"),
+                    InlineKeyboardButton("❌ বানান ভুল", callback_data=f"admin_req|wrong_sp|{user_id}")
+                ],
+                [
+                    InlineKeyboardButton("🟢 আপলোড হয়েছে", callback_data=f"admin_req|uploaded|{user_id}"),
+                    InlineKeyboardButton("✍️ কাস্টম মেসেজ", callback_data=f"admin_req|custom|{user_id}")
+                ]
             ]
-        ]
-        
-        if hasattr(config, "LOG_CHANNEL") and config.LOG_CHANNEL:
-            try:
-                await client.send_message(
-                    chat_id=config.LOG_CHANNEL,
-                    text=log_text,
-                    reply_markup=InlineKeyboardMarkup(admin_buttons)
-                )
-            except Exception as e:
-                print(f"Failed to send request to admin channel: {e}")
+            
+            if hasattr(config, "LOG_CHANNEL") and config.LOG_CHANNEL:
+                try:
+                    await client.send_message(
+                        chat_id=config.LOG_CHANNEL,
+                        text=log_text,
+                        reply_markup=InlineKeyboardMarkup(admin_buttons)
+                    )
+                except Exception as e:
+                    print(f"Failed to send request to admin channel: {e}")
     else:
-        err_msg = "⚠️ আপনি ইতিমধ্যেই এই মুভিটির রিকোয়েস্ট পাঠিয়েছেন!"
+        err_msg = "⚠️ আপনি ইতিমধ্যেই এই মুভিটির জন্য রিকোয়েস্ট সাবমিট করেছেন!"
         if is_callback:
             await callback_query.answer(err_msg, show_alert=True)
         else:
