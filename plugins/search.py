@@ -2,7 +2,9 @@
 
 import asyncio
 import re
+import os
 import urllib.parse  # শেয়ার লিংকের টেক্সট এনকোড করার জন্য
+import speech_recognition as sr  # এআই ভয়েস প্রসেসের জন্য যুক্ত করা হয়েছে
 from fuzzywuzzy import process, fuzz  # fuzz ইম্পোর্ট করা হয়েছে স্ট্রিক্ট সর্টিংয়ের জন্য
 from pyrogram import Client, filters, ContinuePropagation
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -76,7 +78,7 @@ async def auto_delete_search_messages(user_msg: Message, bot_msg: Message):
     except:
         pass
 
-# --- গ্রুপে বটের রিপ্লাই এবং ইউজারের রিকোয়েস্ট মেসেজ ৫ মিনিট পর একসাথে ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
+# --- গ্রুপে বটের রিপ্লাই এবং রিকোয়েস্ট মেসেজ ৫ মিনিট পর ডিলিট করার ব্যাকগ্রাউন্ড টাস্ক ---
 async def auto_delete_group_reply(bot_msg: Message, user_msg: Message = None):
     await asyncio.sleep(300) # ৩০০ সেকেন্ড = ৫ মিনিট
     try:
@@ -88,6 +90,47 @@ async def auto_delete_group_reply(bot_msg: Message, user_msg: Message = None):
             await user_msg.delete()
         except:
             pass
+
+# --- ভয়েস ফাইল ডাউনলোড, কনভার্ট ও ট্রান্সক্রাইব করার এআই ফাংশন ---
+async def transcribe_voice(client, message: Message) -> str:
+    temp_ogg = f"temp_{message.from_user.id}.ogg"
+    temp_wav = f"temp_{message.from_user.id}.wav"
+    
+    try:
+        # ভয়েস মেসেজটি ডাউনলোড করা হচ্ছে
+        await client.download_media(message=message.voice, file_name=temp_ogg)
+        
+        # অসিঙ্ক্রোনাসভাবে ওজিজি (OGG) থেকে ওয়াভ (WAV) ফরম্যাটে রূপান্তর (ffmpeg এর মাধ্যমে)
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-i", temp_ogg, temp_wav, "-y",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await process.communicate()
+        
+        # স্পিচ রিকগনিশন প্রসেস
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(temp_wav) as source:
+            audio_data = recognizer.record(source)
+            
+        # বাংলা এবং ইংরেজি উভয় ভাষার ভয়েস সার্চ সাপোর্ট করার জন্য ট্রাই করা হচ্ছে
+        try:
+            # প্রথমে বাংলা সার্চ ট্রাই করা হবে
+            text = recognizer.recognize_google(audio_data, language="bn-BD")
+        except:
+            # বাংলা না বুঝলে ইংরেজি হিসেবে ট্র্যাক করবে
+            text = recognizer.recognize_google(audio_data, language="en-US")
+            
+        return text.strip()
+    except Exception as e:
+        print(f"ভয়েস প্রসেস এরর: {e}")
+        return ""
+    finally:
+        # টেম্পোরারি ফাইলগুলো মুছে ফেলা হচ্ছে
+        if os.path.exists(temp_ogg):
+            os.remove(temp_ogg)
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
 
 # --- 🍿 মাল্টি-ওয়ার্ড ক্যান্ডিডেট ম্যাচিং এআই স্পেলিং চেকার 🍿 ---
 async def get_close_match_from_db(query: str):
@@ -172,6 +215,64 @@ async def advanced_search_db(query: str):
             return results, new_query
             
     return [], query
+
+
+# --- এআই ভয়েস সার্চ হ্যান্ডলার (ভয়েস রিসিভার - ক্র্যাশপ্রুফ সংস্করণ) ---
+@Client.on_message(filters.voice)
+async def voice_search_handler(client: Client, message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    
+    try:
+        status_msg = await message.reply_text("🎙 **আপনার কণ্ঠস্বর বিশ্লেষণ করা হচ্ছে...**")
+    except Exception:
+        return
+    
+    transcribed_text = await transcribe_voice(client, message)
+    
+    if not transcribed_text:
+        try:
+            await status_msg.edit_text("❌ দুঃখিত, আপনার ভয়েস মেসেজটি স্পষ্ট বোঝা যায়নি। দয়া করে আবার চেষ্টা করুন বা লিখে সার্চ করুন।")
+        except Exception:
+            pass
+        asyncio.create_task(auto_delete_group_reply(status_msg))
+        return
+        
+    try:
+        await status_msg.edit_text(f"🔍 **শনাক্ত করা নাম:** `{transcribed_text}`\n🔎 মুভি খোঁজা হচ্ছে...")
+    except Exception:
+        pass
+        
+    results, matched_query = await advanced_search_db(transcribed_text)
+    
+    if results:
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+            
+        if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+            group_reply = await send_group_results(message, results, matched_query, page=0, lang="all", searcher_id=user_id)
+            asyncio.create_task(auto_delete_group_reply(group_reply, message))
+        else:
+            results_msg = await send_search_results(message, results, matched_query, page=0, lang="all")
+            asyncio.create_task(auto_delete_search_messages(message, results_msg))
+    else:
+        # মুভি পাওয়া না গেলে
+        safe_query = safe_bytes_truncate(transcribed_text, 55)
+        req_buttons = [[InlineKeyboardButton("📢 Request Admin", callback_data=f"req|{safe_query}")]]
+        try:
+            await status_msg.edit_text(
+                f"❌ দুঃখিত, **'{transcribed_text}'** মুভিটি পাওয়া যায়নি।\n"
+                f"👉 আপনি চাইলে নিচের বাটনে চাপ দিয়ে এডমিনকে রিকোয়েস্ট করতে পারেন।",
+                reply_markup=InlineKeyboardMarkup(req_buttons)
+            )
+        except Exception:
+            pass
+            
+        if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+            asyncio.create_task(auto_delete_group_reply(status_msg, message))
+        else:
+            asyncio.create_task(auto_delete_search_messages(message, status_msg))
 
 
 @Client.on_message(filters.text)
@@ -427,7 +528,7 @@ async def main_handler(client: Client, message: Message):
             asyncio.create_task(auto_delete_search_messages(message, results_msg))
             return
 
-        # ১.৪ চতুর্থ ধাপ: কোনোভাবেই ফাইল না পাওয়া গেলে
+        # ১.৪ quarto ধাপ: কোনোভাবেই ফাইল না পাওয়া গেলে
         safe_query = safe_bytes_truncate(query, 55)
         req_buttons = [
             [InlineKeyboardButton("📢 Request Admin to Upload", callback_data=f"req|{safe_query}")]
@@ -696,7 +797,7 @@ async def send_group_results(message_or_query, results, query, page=0, lang="all
     if nav_buttons:
         buttons.append(nav_buttons)
 
-    # গ্রুপ চ্যাটের জন্য আকর্ষণীয় ল্যাঙ্গুয়েজ রো-বাটন সেটআপ (ইউনিক gl কলব্যাক)
+    # @Client.on_callback_query(filters.regex(r"^gl\|"))
     lang_row1 = [
         InlineKeyboardButton("🇧🇩 Bangla", callback_data=f"gl|0|bn|{safe_query}|{searcher_id}"),
         InlineKeyboardButton("🇮🇳 Hindi", callback_data=f"gl|0|hi|{safe_query}|{searcher_id}"),
@@ -952,7 +1053,7 @@ async def request_movie_handler(client: Client, callback_query):
         else:
             await msg_ctx.reply_text(err_msg)
 
-# ৭. এডমিনদের বাটনে ক্লিক হ্যান্ডলার
+# ७. এডমিনদের বাটনে ক্লিক হ্যান্ডলার
 @Client.on_callback_query(filters.regex(r"^admin_req\|"))
 async def admin_request_action_handler(client: Client, callback_query):
     data = callback_query.data.split("|")
