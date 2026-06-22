@@ -9,8 +9,8 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 import config
 
-# database.py থেকে প্রয়োজনীয় কালেকশন এবং ইউজার ডাটাবেজ সরাসরি ইম্পোর্ট করা হলো
-from database import file_cols, user_db, save_file
+# database.py থেকে প্রয়োজনীয় কালেকশন, ইউজার ডাটাবেজ এবং normalize_text সরাসরি ইম্পোর্ট করা হলো
+from database import file_cols, user_db, save_file, normalize_text
 
 # --- লুপ-স্বাধীন গ্লোবাল স্পিনলক সেট (ডাবল পোস্ট সম্পূর্ণ বন্ধ করার জন্য) ---
 processing_keys = set()
@@ -262,12 +262,15 @@ async def auto_channel_post_handler(client: Client, message: Message):
     await asyncio.sleep(2)
     
     media = message.document or message.video
-    file_name = media.file_name
+    raw_file_name = media.file_name if media.file_name else f"Video_File_{media.file_size}"
+    
+    # [নতুন পরিবর্তন]: ডাটাবেজ চেকের পূর্বে নাম নরমালাইজ করা হচ্ছে যাতে ফ্যান্সি ফন্টের ফাইলগুলোও সহজে চেক করা যায়
+    file_name = normalize_text(raw_file_name)
     file_size_mb = round(media.file_size / (1024 * 1024), 2)
     
     db_id = None
     
-    # ১. ডাটাবেজ চেক
+    # ১. ডাটাবেজ চেক (ফাইল আইডি এবং নরমালাইজড ফাইল নেম দিয়ে চেক করা হচ্ছে)
     for col in file_cols:
         doc = await col.find_one({"file_id": media.file_id})
         if doc:
@@ -283,7 +286,8 @@ async def auto_channel_post_handler(client: Client, message: Message):
             
     if not db_id:
         try:
-            db_id = await save_file(file_name, media.file_size, media.file_id, message.chat.id, message.id)
+            # save_file কল করার সময় raw_file_name পাঠানো হচ্ছে, সেভ করার সময় database.py নিজেই নরমালাইজ করে নেবে
+            db_id = await save_file(raw_file_name, media.file_size, media.file_id, message.chat.id, message.id)
         except Exception as e:
             print(f"Error while calling save_file: {e}")
         
