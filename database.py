@@ -261,7 +261,7 @@ async def search_db(query):
         if clean_file_name.startswith(clean_user_query):
             return 3 + (len(clean_file_name) - len(clean_user_query)) / 10000.0
             
-        # ৫. সিকোয়েন্স মিলের হার (difflib ratio) -> সর্বনিম্ন অগ্রাধিকার
+        # ۵. সিকোয়েন্স মিলের হার (difflib ratio) -> সর্বনিম্ন অগ্রাধিকার
         ratio = difflib.SequenceMatcher(None, clean_user_query, clean_file_name).ratio()
         return 4 - ratio
 
@@ -445,17 +445,31 @@ async def get_all_users():
         users.append(doc["user_id"])
     return users
 
+# [নতুন আপডেট]: ডাইনামিক রিকোয়েস্ট ট্র্যাকিং লজিক যা search.py এর সাথে ১০০% সিঙ্কড
 async def save_movie_request(user_id, query):
     normalized_query = normalize_text(query)
-    exists = await requests_col.find_one({"user_id": user_id, "query": normalized_query, "status": "pending"})
-    if not exists:
+    # ইতিমধ্যে পেন্ডিং থাকা কোনো রিকোয়েস্ট আছে কিনা তা চেক করা হচ্ছে
+    exists = await requests_col.find_one({"query": normalized_query, "status": "pending"})
+    
+    if exists:
+        # ইউজার যদি ইতিমধ্যে রিকোয়েস্ট লিস্টে থেকে থাকেন
+        if user_id in exists.get("users", []):
+            return False, len(exists.get("users", []))
+            
+        # নতুন ইউজার হিসেবে তাকে ওই রিকোয়েস্টে যুক্ত করা হচ্ছে এবং কাউন্ট বাড়ছে
+        await requests_col.update_one(
+            {"_id": exists["_id"]},
+            {"$push": {"users": user_id}}
+        )
+        return True, len(exists.get("users", [])) + 1
+    else:
+        # একদম নতুন মুভির রিকোয়েস্ট তৈরি করা হচ্ছে
         await requests_col.insert_one({
-            "user_id": user_id,
             "query": normalized_query,
+            "users": [user_id],
             "status": "pending"
         })
-        return True
-    return False
+        return True, 1
 
 # --- প্রিমিয়াম ইউজার কন্ট্রোল ---
 async def add_premium_user(user_id: int):
